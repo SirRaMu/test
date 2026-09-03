@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mein Finanzplaner</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header class="app-header">
+  <div class="brand">
+    <span class="brand-emoji">💶</span>
+    <div>
+      <h1>Mein Finanzplaner</h1>
+      <p class="subtitle">Konten, Sparziele &amp; Vorausschau</p>
+    </div>
+  </div>
+  <div class="total-balance">
+    <span class="label">Gesamtvermögen</span>
+    <span class="value" id="totalBalance">0,00&nbsp;€</span>
+  </div>
+</header>
+
+<nav class="tabs" id="tabs">
+  <button class="tab-btn active" data-tab="uebersicht">📊 Übersicht</button>
+  <button class="tab-btn" data-tab="verteilen">🔀 Geld verteilen</button>
+  <button class="tab-btn" data-tab="konten">🏦 Konten</button>
+  <button class="tab-btn" data-tab="transaktionen">📒 Transaktionen</button>
+  <button class="tab-btn" data-tab="backup">💾 Backup</button>
+</nav>
+
+<main id="app">
+
+  <!-- ÜBERSICHT -->
+  <section id="tab-uebersicht" class="tab-panel active">
+    <div class="summary-row" id="summaryRow"></div>
+
+    <div class="card">
+      <h2>Kontostand-Verlauf</h2>
+      <canvas id="balanceChart" width="900" height="260"></canvas>
+    </div>
+
+    <div class="card">
+      <h2>Fällige Kosten &amp; Sparziele</h2>
+      <div id="upcomingList" class="upcoming-list"></div>
+    </div>
+
+    <div class="card">
+      <h2>Meine Konten</h2>
+      <div id="accountCards" class="account-grid"></div>
+    </div>
+  </section>
+
+  <!-- VERTEILEN -->
+  <section id="tab-verteilen" class="tab-panel">
+    <div class="card">
+      <h2>Geld verteilen</h2>
+      <p class="hint">Trag ein, wie viel Geld reinkommt (z.&nbsp;B. Taschengeld oder Lohn). Die Software verteilt es automatisch nach deinen Prozentsätzen auf deine Konten.</p>
+      <form id="distributeForm" class="inline-form">
+        <label>Betrag (€)
+          <input type="number" id="distAmount" step="0.01" min="0.01" required placeholder="z.B. 150">
+        </label>
+        <label>Quelle
+          <select id="distSource">
+            <option>Taschengeld</option>
+            <option>Job / Lohn</option>
+            <option>Geschenk</option>
+            <option>Sonstiges</option>
+          </select>
+        </label>
+        <label>Datum
+          <input type="date" id="distDate" required>
+        </label>
+        <button type="submit" class="btn-primary">Vorschau &amp; Buchen</button>
+      </form>
+      <div id="distPreview" class="dist-preview"></div>
+    </div>
+
+    <div class="card">
+      <h2>Verteilungs-Verlauf</h2>
+      <div id="distHistory"></div>
+    </div>
+  </section>
+
+  <!-- KONTEN -->
+  <section id="tab-konten" class="tab-panel">
+    <div class="card">
+      <h2>Konten verwalten</h2>
+      <p class="hint">Lege beliebig viele Konten an (z.&nbsp;B. Sparkonto, Auto, Urlaub, Party). Jedes Konto kann einen festen Verteil-Anteil (%) und optional ein Sparziel mit Datum haben.</p>
+      <p class="pct-total">Verteilte Prozente insgesamt: <strong id="pctTotal">0%</strong></p>
+      <div id="accountEditList" class="account-edit-list"></div>
+      <button id="addAccountBtn" class="btn-secondary">+ Neues Konto</button>
+    </div>
+  </section>
+
+  <!-- TRANSAKTIONEN -->
+  <section id="tab-transaktionen" class="tab-panel">
+    <div class="card">
+      <h2>Neue Buchung</h2>
+      <form id="txForm" class="inline-form">
+        <label>Konto
+          <select id="txAccount"></select>
+        </label>
+        <label>Typ
+          <select id="txType">
+            <option value="in">Einnahme (+)</option>
+            <option value="out">Ausgabe (-)</option>
+          </select>
+        </label>
+        <label>Betrag (€)
+          <input type="number" id="txAmount" step="0.01" min="0.01" required>
+        </label>
+        <label>Datum
+          <input type="date" id="txDate" required>
+        </label>
+        <label>Kategorie
+          <input type="text" id="txCategory" list="categoryList" placeholder="z.B. Reparatur">
+          <datalist id="categoryList">
+            <option>Taschengeld</option>
+            <option>Job / Lohn</option>
+            <option>Reifen</option>
+            <option>Ölwechsel</option>
+            <option>Bremsen</option>
+            <option>Reparatur</option>
+            <option>Urlaub</option>
+            <option>Party</option>
+            <option>Sonstiges</option>
+          </datalist>
+        </label>
+        <label class="grow">Notiz
+          <input type="text" id="txNote" placeholder="optional">
+        </label>
+        <button type="submit" class="btn-primary">Buchen</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Alle Transaktionen</h2>
+      <label class="filter-label">Konto filtern:
+        <select id="txFilter"><option value="">Alle</option></select>
+      </label>
+      <div class="table-wrap">
+        <table id="txTable">
+          <thead>
+            <tr><th>Datum</th><th>Konto</th><th>Kategorie</th><th>Notiz</th><th>Betrag</th><th></th></tr>
+          </thead>
+          <tbody id="txTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <!-- BACKUP -->
+  <section id="tab-backup" class="tab-panel">
+    <div class="card">
+      <h2>Backup</h2>
+      <p class="hint">Alle Daten liegen nur in deinem Browser (localStorage). Exportiere regelmäßig ein Backup, damit nichts verloren geht.</p>
+      <div class="backup-actions">
+        <button id="exportBtn" class="btn-secondary">⬇️ Backup exportieren (JSON)</button>
+        <label class="btn-secondary file-label">⬆️ Backup importieren
+          <input type="file" id="importInput" accept="application/json" hidden>
+        </label>
+        <button id="resetBtn" class="btn-danger">🗑️ Alles zurücksetzen</button>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<div id="toast" class="toast"></div>
+
+<script src="js/app.js"></script>
+</body>
+</html>

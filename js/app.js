@@ -1,0 +1,743 @@
+/* ===================== Mein Finanzplaner ===================== */
+"use strict";
+
+const STORAGE_KEY = "finanzplaner_v1";
+const fmt = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
+const fmtDate = (iso) => {
+  if (!iso) return "-";
+  const [y, m, d] = iso.split("-");
+  return `${d}.${m}.${y}`;
+};
+const todayISO = () => new Date().toISOString().slice(0, 10);
+const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+
+/* ---------- State ---------- */
+let state = loadState();
+
+function seedState() {
+  const t = todayISO();
+  const monthAgo = shiftDays(t, -30);
+  const nextSept = nextOccurrence("09-01");
+  return {
+    accounts: [
+      { id: "girokonto", name: "Girokonto (frei verfügbar)", emoji: "💳", color: "#64748b", isDefault: true, distributionPercent: 10, goal: null },
+      { id: "sparkonto", name: "Sparkonto", emoji: "🐷", color: "#16a34a", isDefault: false, distributionPercent: 50, goal: null },
+      { id: "auto-versicherung", name: "Auto: Versicherung & Steuer", emoji: "🚗", color: "#dc2626", isDefault: false, distributionPercent: 15, goal: { amount: 1350, date: nextSept, recurrence: "yearly" } },
+      { id: "auto-reparatur", name: "Auto: Reifen, Ölwechsel & Reparaturen", emoji: "🔧", color: "#ea580c", isDefault: false, distributionPercent: 10, goal: { amount: 400, date: null, recurrence: "none" } },
+      { id: "urlaub", name: "Urlaub", emoji: "✈️", color: "#0284c7", isDefault: false, distributionPercent: 10, goal: { amount: 600, date: shiftDays(t, 270), recurrence: "once" } },
+      { id: "party", name: "Party & Spaß", emoji: "🎉", color: "#9333ea", isDefault: false, distributionPercent: 5, goal: { amount: 150, date: null, recurrence: "none" } },
+    ],
+    transactions: [
+      { id: uid(), date: monthAgo, accountId: "girokonto", amount: 35, category: "Startguthaben", note: "Beispieldaten", createdAt: Date.now() },
+      { id: uid(), date: monthAgo, accountId: "sparkonto", amount: 300, category: "Startguthaben", note: "Beispieldaten", createdAt: Date.now() },
+      { id: uid(), date: monthAgo, accountId: "auto-versicherung", amount: 240, category: "Startguthaben", note: "Beispieldaten", createdAt: Date.now() },
+      { id: uid(), date: monthAgo, accountId: "auto-reparatur", amount: 40, category: "Startguthaben", note: "Beispieldaten", createdAt: Date.now() },
+      { id: uid(), date: monthAgo, accountId: "urlaub", amount: 60, category: "Startguthaben", note: "Beispieldaten", createdAt: Date.now() },
+      { id: uid(), date: monthAgo, accountId: "party", amount: 20, category: "Startguthaben", note: "Beispieldaten", createdAt: Date.now() },
+    ],
+  };
+}
+
+function loadState() {
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (raw) {
+    try {
+      return JSON.parse(raw);
+    } catch (e) {
+      console.error("Konnte gespeicherte Daten nicht lesen, starte neu.", e);
+    }
+  }
+  const fresh = seedState();
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(fresh));
+  return fresh;
+}
+
+function saveState() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+
+/* ---------- Date helpers ---------- */
+function shiftDays(iso, days) {
+  const d = new Date(iso + "T00:00:00");
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+function addYears(iso, years) {
+  const d = new Date(iso + "T00:00:00");
+  d.setFullYear(d.getFullYear() + years);
+  return d.toISOString().slice(0, 10);
+}
+function daysBetween(fromISO, toISO) {
+  const a = new Date(fromISO + "T00:00:00");
+  const b = new Date(toISO + "T00:00:00");
+  return Math.round((b - a) / 86400000);
+}
+// next occurrence of a "MM-DD" from today (this year if still ahead, else next year)
+function nextOccurrence(mmdd) {
+  const t = todayISO();
+  const year = t.slice(0, 4);
+  let candidate = `${year}-${mmdd}`;
+  if (candidate <= t) candidate = `${parseInt(year, 10) + 1}-${mmdd}`;
+  return candidate;
+}
+
+/* ---------- Derived data ---------- */
+function getBalance(accountId) {
+  return state.transactions
+    .filter((tx) => tx.accountId === accountId)
+    .reduce((sum, tx) => sum + tx.amount, 0);
+}
+function getTotalBalance() {
+  return state.accounts.reduce((sum, a) => sum + getBalance(a.id), 0);
+}
+function getDefaultAccount() {
+  return state.accounts.find((a) => a.isDefault) || state.accounts[0];
+}
+function avgMonthlyContribution(accountId, days = 90) {
+  const cutoff = shiftDays(todayISO(), -days);
+  const sum = state.transactions
+    .filter((tx) => tx.accountId === accountId && tx.date >= cutoff && tx.amount > 0)
+    .reduce((s, tx) => s + tx.amount, 0);
+  return sum / (days / 30.44);
+}
+
+function goalStatus(account) {
+  if (!account.goal || !account.goal.amount) return null;
+  const g = account.goal;
+  const balance = getBalance(account.id);
+  const remaining = Math.max(g.amount - balance, 0);
+  const reached = balance >= g.amount;
+  let daysLeft = null,
+    neededPerMonth = null,
+    trackLabel = null,
+    trackClass = "ok";
+
+  if (reached) {
+    trackLabel = "Ziel erreicht 🎉";
+    trackClass = "done";
+  } else if (g.date) {
+    daysLeft = daysBetween(todayISO(), g.date);
+    if (daysLeft < 0) {
+      trackLabel = "Überfällig!";
+      trackClass = "bad";
+    } else {
+      const monthsLeft = Math.max(daysLeft / 30.44, 0.1);
+      neededPerMonth = remaining / monthsLeft;
+      const avg = avgMonthlyContribution(account.id);
+      if (avg + 0.5 >= neededPerMonth) {
+        trackLabel = "Auf Kurs";
+        trackClass = "ok";
+      } else {
+        trackLabel = "Aufholbedarf";
+        trackClass = "warn";
+      }
+    }
+  } else {
+    trackLabel = "Sparziel (offen)";
+    trackClass = "ok";
+  }
+
+  return { balance, remaining, reached, daysLeft, neededPerMonth, trackLabel, trackClass, pct: Math.min(100, (balance / g.amount) * 100) };
+}
+
+/* ===================== Rendering ===================== */
+
+function renderAll() {
+  renderHeader();
+  renderOverview();
+  renderDistributeTab();
+  renderAccountsTab();
+  renderTransactionsTab();
+}
+
+function renderHeader() {
+  document.getElementById("totalBalance").textContent = fmt.format(getTotalBalance());
+}
+
+/* ---- Übersicht ---- */
+function renderOverview() {
+  const total = getTotalBalance();
+  const goalsWithDate = state.accounts.filter((a) => a.goal && a.goal.date);
+  const soonest = goalsWithDate
+    .slice()
+    .sort((a, b) => a.goal.date.localeCompare(b.goal.date))[0];
+
+  const summaryRow = document.getElementById("summaryRow");
+  summaryRow.innerHTML = "";
+  summaryRow.appendChild(
+    tile("Gesamtvermögen", fmt.format(total))
+  );
+  summaryRow.appendChild(tile("Konten", state.accounts.length));
+  summaryRow.appendChild(
+    tile(
+      "Nächste Fälligkeit",
+      soonest ? `${soonest.emoji} ${daysBetween(todayISO(), soonest.goal.date)} Tage` : "—"
+    )
+  );
+
+  drawBalanceChart();
+  renderUpcoming();
+  renderAccountCards();
+}
+
+function tile(label, value) {
+  const div = document.createElement("div");
+  div.className = "summary-tile";
+  div.innerHTML = `<div class="num">${value}</div><div class="lbl">${label}</div>`;
+  return div;
+}
+
+function renderUpcoming() {
+  const list = document.getElementById("upcomingList");
+  list.innerHTML = "";
+  const withDate = state.accounts
+    .filter((a) => a.goal && a.goal.date)
+    .slice()
+    .sort((a, b) => a.goal.date.localeCompare(b.goal.date));
+
+  if (!withDate.length) {
+    list.innerHTML = `<p class="empty-hint">Keine Konten mit Fälligkeitsdatum. Leg unter "Konten" ein Sparziel mit Datum an (z.B. Auto-Versicherung).</p>`;
+    return;
+  }
+
+  withDate.forEach((a) => {
+    const s = goalStatus(a);
+    const days = s.daysLeft;
+    const item = document.createElement("div");
+    item.className = "upcoming-item";
+    item.innerHTML = `
+      <div class="u-main">
+        <span class="u-title">${a.emoji} ${a.name}</span>
+        <span class="u-sub">Ziel: ${fmt.format(a.goal.amount)} am ${fmtDate(a.goal.date)} ${a.goal.recurrence === "yearly" ? "(jährlich)" : ""}</span>
+        <span class="u-sub">Gespart: ${fmt.format(s.balance)} ${s.neededPerMonth != null ? `· benötigt ca. ${fmt.format(s.neededPerMonth)}/Monat` : ""}</span>
+      </div>
+      <div class="u-right">
+        <span class="badge ${s.trackClass}">${days != null ? (days >= 0 ? days + " Tage · " : "") : ""}${s.trackLabel}</span>
+        ${!s.reached ? `<button class="btn-secondary pay-btn" data-id="${a.id}">Als bezahlt buchen</button>` : ""}
+      </div>
+    `;
+    list.appendChild(item);
+  });
+
+  list.querySelectorAll(".pay-btn").forEach((btn) =>
+    btn.addEventListener("click", () => payGoal(btn.dataset.id))
+  );
+}
+
+function payGoal(accountId) {
+  const a = state.accounts.find((x) => x.id === accountId);
+  if (!a || !a.goal) return;
+  const ok = confirm(
+    `${a.goal.amount.toFixed(2)} € von "${a.name}" jetzt als bezahlt buchen?`
+  );
+  if (!ok) return;
+  state.transactions.push({
+    id: uid(),
+    date: todayISO(),
+    accountId: a.id,
+    amount: -a.goal.amount,
+    category: "Fixkosten bezahlt",
+    note: a.name,
+    createdAt: Date.now(),
+  });
+  if (a.goal.recurrence === "yearly") {
+    a.goal.date = addYears(a.goal.date, 1);
+  } else {
+    a.goal = null;
+  }
+  saveState();
+  renderAll();
+  toast("Zahlung gebucht.");
+}
+
+function renderAccountCards() {
+  const grid = document.getElementById("accountCards");
+  grid.innerHTML = "";
+  state.accounts.forEach((a) => {
+    const balance = getBalance(a.id);
+    const s = goalStatus(a);
+    const card = document.createElement("div");
+    card.className = "account-card";
+    card.style.borderLeftColor = a.color;
+    card.innerHTML = `
+      <div class="acc-head">
+        <span class="acc-name">${a.emoji} ${a.name}</span>
+        <span>${a.distributionPercent}%</span>
+      </div>
+      <div class="acc-balance">${fmt.format(balance)}</div>
+      ${
+        s
+          ? `<div class="progress-outer"><div class="progress-inner" style="width:${s.pct}%;background:${a.color}"></div></div>
+             <div class="acc-goal-meta">
+               <span>Ziel: ${fmt.format(a.goal.amount)}${a.goal.date ? " · " + fmtDate(a.goal.date) : ""}</span>
+               <span>${s.pct.toFixed(0)}%</span>
+             </div>
+             <span class="badge ${s.trackClass}">${s.trackLabel}</span>`
+          : `<div class="acc-goal-meta"><span>Kein Sparziel gesetzt</span></div>`
+      }
+    `;
+    grid.appendChild(card);
+  });
+}
+
+/* ---- Balance chart (canvas line chart, cumulative total) ---- */
+function drawBalanceChart() {
+  const canvas = document.getElementById("balanceChart");
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width,
+    H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  const events = state.transactions
+    .slice()
+    .sort((a, b) => (a.date === b.date ? a.createdAt - b.createdAt : a.date.localeCompare(b.date)));
+
+  if (!events.length) {
+    ctx.fillStyle = "#94a3b8";
+    ctx.font = "14px sans-serif";
+    ctx.fillText("Noch keine Buchungen vorhanden.", 20, H / 2);
+    return;
+  }
+
+  // build cumulative points per date
+  let running = 0;
+  const points = [];
+  let lastDate = null;
+  events.forEach((tx) => {
+    running += tx.amount;
+    if (tx.date === lastDate) {
+      points[points.length - 1].value = running;
+    } else {
+      points.push({ date: tx.date, value: running });
+      lastDate = tx.date;
+    }
+  });
+  // ensure a point at "today" so the line reaches the right edge
+  if (points[points.length - 1].date !== todayISO()) {
+    points.push({ date: todayISO(), value: running });
+  }
+
+  const padL = 60, padR = 20, padT = 20, padB = 30;
+  const plotW = W - padL - padR, plotH = H - padT - padB;
+
+  const values = points.map((p) => p.value);
+  let minV = Math.min(0, ...values);
+  let maxV = Math.max(...values, 1);
+  if (maxV === minV) maxV = minV + 1;
+
+  const t0 = new Date(points[0].date).getTime();
+  const t1 = new Date(points[points.length - 1].date).getTime();
+  const span = Math.max(t1 - t0, 1);
+
+  const xFor = (d) => padL + ((new Date(d).getTime() - t0) / span) * plotW;
+  const yFor = (v) => padT + plotH - ((v - minV) / (maxV - minV)) * plotH;
+
+  // axes / gridlines
+  ctx.strokeStyle = "#e4e8ef";
+  ctx.fillStyle = "#94a3b8";
+  ctx.font = "11px sans-serif";
+  ctx.lineWidth = 1;
+  const steps = 4;
+  for (let i = 0; i <= steps; i++) {
+    const v = minV + ((maxV - minV) * i) / steps;
+    const y = yFor(v);
+    ctx.beginPath();
+    ctx.moveTo(padL, y);
+    ctx.lineTo(W - padR, y);
+    ctx.stroke();
+    ctx.fillText(fmt.format(v), 4, y + 4);
+  }
+
+  // line
+  ctx.strokeStyle = "#2563eb";
+  ctx.lineWidth = 2.5;
+  ctx.beginPath();
+  points.forEach((p, i) => {
+    const x = xFor(p.date), y = yFor(p.value);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  // fill under line
+  ctx.lineTo(xFor(points[points.length - 1].date), padT + plotH);
+  ctx.lineTo(xFor(points[0].date), padT + plotH);
+  ctx.closePath();
+  ctx.fillStyle = "rgba(37,99,235,0.08)";
+  ctx.fill();
+
+  // date labels (first / last)
+  ctx.fillStyle = "#64748b";
+  ctx.fillText(fmtDate(points[0].date), padL, H - 8);
+  ctx.textAlign = "right";
+  ctx.fillText(fmtDate(points[points.length - 1].date), W - padR, H - 8);
+  ctx.textAlign = "left";
+}
+
+/* ---- Verteilen ---- */
+function computeDistribution(amount) {
+  const distAccounts = state.accounts.filter((a) => !a.isDefault && a.distributionPercent > 0);
+  const usedPct = distAccounts.reduce((s, a) => s + a.distributionPercent, 0);
+  const cappedPct = Math.min(usedPct, 100);
+  const scale = usedPct > 100 ? 100 / usedPct : 1;
+
+  const rows = distAccounts.map((a) => ({
+    account: a,
+    pct: a.distributionPercent * scale,
+    amount: amount * (a.distributionPercent * scale) / 100,
+  }));
+  const allocated = rows.reduce((s, r) => s + r.amount, 0);
+  const remainder = Math.max(amount - allocated, 0);
+  const def = getDefaultAccount();
+  rows.push({ account: def, pct: 100 - cappedPct, amount: remainder, isRemainder: true });
+  return rows;
+}
+
+function renderDistributeTab() {
+  document.getElementById("distDate").value = todayISO();
+  renderDistHistory();
+}
+
+function renderDistPreview(amount) {
+  const box = document.getElementById("distPreview");
+  if (!amount || amount <= 0) {
+    box.innerHTML = "";
+    return;
+  }
+  const rows = computeDistribution(amount);
+  box.innerHTML =
+    rows
+      .map(
+        (r) =>
+          `<div class="dist-row"><span>${r.account.emoji} ${r.account.name} (${r.pct.toFixed(0)}%)</span><span>${fmt.format(r.amount)}</span></div>`
+      )
+      .join("") + `<div class="dist-row"><span>Gesamt</span><span>${fmt.format(amount)}</span></div>`;
+}
+
+function renderDistHistory() {
+  const box = document.getElementById("distHistory");
+  const rows = state.transactions
+    .filter((tx) => tx.category === "Verteilung")
+    .slice()
+    .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt)
+    .slice(0, 20);
+  if (!rows.length) {
+    box.innerHTML = `<p class="empty-hint">Noch keine Verteilungen gebucht.</p>`;
+    return;
+  }
+  box.innerHTML = `<div class="table-wrap"><table><thead><tr><th>Datum</th><th>Konto</th><th>Betrag</th><th>Notiz</th></tr></thead><tbody>${rows
+    .map((tx) => {
+      const acc = state.accounts.find((a) => a.id === tx.accountId);
+      return `<tr><td>${fmtDate(tx.date)}</td><td>${acc ? acc.emoji + " " + acc.name : "?"}</td><td class="amount-pos">${fmt.format(tx.amount)}</td><td>${tx.note || ""}</td></tr>`;
+    })
+    .join("")}</tbody></table></div>`;
+}
+
+/* ---- Konten ---- */
+function renderAccountsTab() {
+  const total = state.accounts.reduce((s, a) => s + (a.isDefault ? 0 : a.distributionPercent), 0);
+  document.getElementById("pctTotal").textContent = total + "%";
+
+  const list = document.getElementById("accountEditList");
+  list.innerHTML = "";
+  state.accounts.forEach((a) => {
+    const card = document.createElement("div");
+    card.className = "account-edit-card" + (a.goal ? " has-goal" : "");
+    card.dataset.id = a.id;
+    card.innerHTML = `
+      <div class="row">
+        <label>Emoji <input type="text" class="f-emoji" value="${a.emoji}" maxlength="4" style="width:50px"></label>
+        <label>Name <input type="text" class="f-name" value="${a.name}" style="min-width:200px"></label>
+        <label>Farbe <input type="color" class="f-color" value="${a.color}"></label>
+        <label>Verteil-% <input type="number" class="f-pct" min="0" max="100" value="${a.distributionPercent}" ${a.isDefault ? "disabled title='Standardkonto erhält den Rest automatisch'" : ""}></label>
+        <label><input type="checkbox" class="f-hasgoal" ${a.goal ? "checked" : ""}> Sparziel</label>
+      </div>
+      <div class="row goal-fields">
+        <label>Zielbetrag (€) <input type="number" class="f-goal-amount" min="0" step="1" value="${a.goal ? a.goal.amount : ""}"></label>
+        <label>Zieldatum <input type="date" class="f-goal-date" value="${a.goal && a.goal.date ? a.goal.date : ""}"></label>
+        <label>Wiederholung
+          <select class="f-goal-recurrence">
+            <option value="none" ${a.goal && a.goal.recurrence === "none" ? "selected" : ""}>Einmalig / offen</option>
+            <option value="once" ${a.goal && a.goal.recurrence === "once" ? "selected" : ""}>Einmalig mit Datum</option>
+            <option value="yearly" ${a.goal && a.goal.recurrence === "yearly" ? "selected" : ""}>Jährlich</option>
+          </select>
+        </label>
+      </div>
+      <div class="card-actions">
+        <span class="empty-hint">Kontostand: ${fmt.format(getBalance(a.id))}</span>
+        <button class="btn-secondary btn-save">Speichern</button>
+        ${a.isDefault ? "" : `<button class="btn-danger btn-delete">Löschen</button>`}
+      </div>
+    `;
+    list.appendChild(card);
+
+    card.querySelector(".f-hasgoal").addEventListener("change", (e) => {
+      card.classList.toggle("has-goal", e.target.checked);
+    });
+
+    card.querySelector(".btn-save").addEventListener("click", () => saveAccountCard(a.id, card));
+    const delBtn = card.querySelector(".btn-delete");
+    if (delBtn) delBtn.addEventListener("click", () => deleteAccount(a.id));
+  });
+
+  // refresh account selects elsewhere
+  fillAccountSelect(document.getElementById("txAccount"), false);
+  fillAccountSelect(document.getElementById("txFilter"), true);
+}
+
+function saveAccountCard(id, card) {
+  const a = state.accounts.find((x) => x.id === id);
+  if (!a) return;
+  a.emoji = card.querySelector(".f-emoji").value.trim() || "💰";
+  a.name = card.querySelector(".f-name").value.trim() || "Konto";
+  a.color = card.querySelector(".f-color").value;
+  if (!a.isDefault) {
+    let pct = parseFloat(card.querySelector(".f-pct").value);
+    if (isNaN(pct) || pct < 0) pct = 0;
+    a.distributionPercent = pct;
+  }
+  const hasGoal = card.querySelector(".f-hasgoal").checked;
+  if (hasGoal) {
+    const amount = parseFloat(card.querySelector(".f-goal-amount").value);
+    const date = card.querySelector(".f-goal-date").value || null;
+    const recurrence = card.querySelector(".f-goal-recurrence").value;
+    if (!amount || amount <= 0) {
+      alert("Bitte einen gültigen Zielbetrag angeben.");
+      return;
+    }
+    a.goal = { amount, date: recurrence === "none" ? null : date, recurrence };
+  } else {
+    a.goal = null;
+  }
+  saveState();
+  renderAll();
+  toast("Konto gespeichert.");
+}
+
+function deleteAccount(id) {
+  const a = state.accounts.find((x) => x.id === id);
+  if (!a) return;
+  const balance = getBalance(id);
+  const msg =
+    balance !== 0
+      ? `"${a.name}" hat noch ${fmt.format(balance)}. Dieser Betrag wird auf "${getDefaultAccount().name}" übertragen. Konto wirklich löschen?`
+      : `Konto "${a.name}" wirklich löschen?`;
+  if (!confirm(msg)) return;
+
+  if (balance !== 0) {
+    const def = getDefaultAccount();
+    state.transactions.push({ id: uid(), date: todayISO(), accountId: id, amount: -balance, category: "Kontoauflösung", note: `Übertrag nach ${def.name}`, createdAt: Date.now() });
+    state.transactions.push({ id: uid(), date: todayISO(), accountId: def.id, amount: balance, category: "Kontoauflösung", note: `Übertrag von ${a.name}`, createdAt: Date.now() });
+  }
+  state.accounts = state.accounts.filter((x) => x.id !== id);
+  saveState();
+  renderAll();
+  toast("Konto gelöscht.");
+}
+
+function addAccount() {
+  const id = uid();
+  state.accounts.push({
+    id,
+    name: "Neues Konto",
+    emoji: "💰",
+    color: "#2563eb",
+    isDefault: false,
+    distributionPercent: 0,
+    goal: null,
+  });
+  saveState();
+  renderAccountsTab();
+  const card = document.querySelector(`.account-edit-card[data-id="${id}"] .f-name`);
+  if (card) {
+    card.focus();
+    card.select();
+  }
+}
+
+function fillAccountSelect(select, includeAll) {
+  const prev = select.value;
+  select.innerHTML = "";
+  if (includeAll) {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = "Alle";
+    select.appendChild(opt);
+  }
+  state.accounts.forEach((a) => {
+    const opt = document.createElement("option");
+    opt.value = a.id;
+    opt.textContent = `${a.emoji} ${a.name}`;
+    select.appendChild(opt);
+  });
+  if ([...select.options].some((o) => o.value === prev)) select.value = prev;
+}
+
+/* ---- Transaktionen ---- */
+function renderTransactionsTab() {
+  fillAccountSelect(document.getElementById("txAccount"), false);
+  fillAccountSelect(document.getElementById("txFilter"), true);
+  if (!document.getElementById("txDate").value) document.getElementById("txDate").value = todayISO();
+  renderTxTable();
+}
+
+function renderTxTable() {
+  const filter = document.getElementById("txFilter").value;
+  const tbody = document.getElementById("txTableBody");
+  const rows = state.transactions
+    .filter((tx) => !filter || tx.accountId === filter)
+    .slice()
+    .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt);
+
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="6" class="empty-hint">Keine Transaktionen.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = rows
+    .map((tx) => {
+      const acc = state.accounts.find((a) => a.id === tx.accountId);
+      const cls = tx.amount >= 0 ? "amount-pos" : "amount-neg";
+      return `<tr>
+        <td>${fmtDate(tx.date)}</td>
+        <td>${acc ? acc.emoji + " " + acc.name : "(gelöscht)"}</td>
+        <td>${tx.category || ""}</td>
+        <td>${tx.note || ""}</td>
+        <td class="${cls}">${fmt.format(tx.amount)}</td>
+        <td><button class="icon-btn tx-delete" data-id="${tx.id}" title="Löschen">✕</button></td>
+      </tr>`;
+    })
+    .join("");
+
+  tbody.querySelectorAll(".tx-delete").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      if (!confirm("Diese Buchung löschen?")) return;
+      state.transactions = state.transactions.filter((t) => t.id !== btn.dataset.id);
+      saveState();
+      renderAll();
+    })
+  );
+}
+
+/* ===================== Events ===================== */
+
+function toast(msg) {
+  const el = document.getElementById("toast");
+  el.textContent = msg;
+  el.classList.add("show");
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => el.classList.remove("show"), 2200);
+}
+
+function setupTabs() {
+  document.querySelectorAll(".tab-btn").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
+      document.querySelectorAll(".tab-panel").forEach((p) => p.classList.remove("active"));
+      btn.classList.add("active");
+      document.getElementById("tab-" + btn.dataset.tab).classList.add("active");
+    });
+  });
+}
+
+function setupForms() {
+  document.getElementById("distAmount").addEventListener("input", (e) => {
+    renderDistPreview(parseFloat(e.target.value));
+  });
+
+  document.getElementById("distributeForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const amount = parseFloat(document.getElementById("distAmount").value);
+    const source = document.getElementById("distSource").value;
+    const date = document.getElementById("distDate").value || todayISO();
+    if (!amount || amount <= 0) return;
+    const rows = computeDistribution(amount);
+    rows.forEach((r) => {
+      if (r.amount <= 0) return;
+      state.transactions.push({
+        id: uid(),
+        date,
+        accountId: r.account.id,
+        amount: r.amount,
+        category: "Verteilung",
+        note: source,
+        createdAt: Date.now(),
+      });
+    });
+    saveState();
+    document.getElementById("distAmount").value = "";
+    document.getElementById("distPreview").innerHTML = "";
+    renderAll();
+    toast(`${fmt.format(amount)} verteilt.`);
+  });
+
+  document.getElementById("addAccountBtn").addEventListener("click", addAccount);
+
+  document.getElementById("txForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const accountId = document.getElementById("txAccount").value;
+    const type = document.getElementById("txType").value;
+    let amount = parseFloat(document.getElementById("txAmount").value);
+    const date = document.getElementById("txDate").value || todayISO();
+    const category = document.getElementById("txCategory").value.trim() || "Sonstiges";
+    const note = document.getElementById("txNote").value.trim();
+    if (!accountId || !amount || amount <= 0) return;
+    if (type === "out") amount = -amount;
+    state.transactions.push({ id: uid(), date, accountId, amount, category, note, createdAt: Date.now() });
+    saveState();
+    document.getElementById("txForm").reset();
+    document.getElementById("txDate").value = todayISO();
+    renderAll();
+    toast("Buchung gespeichert.");
+  });
+
+  document.getElementById("txFilter").addEventListener("change", renderTxTable);
+
+  document.getElementById("exportBtn").addEventListener("click", () => {
+    const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `finanzplaner-backup-${todayISO()}.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  });
+
+  document.getElementById("importInput").addEventListener("change", (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(reader.result);
+        if (!data.accounts || !data.transactions) throw new Error("Ungültiges Format");
+        if (!confirm("Aktuelle Daten mit dieser Backup-Datei überschreiben?")) return;
+        state = data;
+        saveState();
+        renderAll();
+        toast("Backup importiert.");
+      } catch (err) {
+        alert("Datei konnte nicht gelesen werden: " + err.message);
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = "";
+  });
+
+  document.getElementById("resetBtn").addEventListener("click", () => {
+    if (!confirm("Wirklich ALLE Daten löschen und mit Beispieldaten neu starten?")) return;
+    state = seedState();
+    saveState();
+    renderAll();
+    toast("Zurückgesetzt.");
+  });
+}
+
+/* ===================== Init ===================== */
+document.addEventListener("DOMContentLoaded", () => {
+  setupTabs();
+  setupForms();
+  renderAll();
+});
