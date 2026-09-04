@@ -4,8 +4,16 @@
 const STORAGE_KEY = "finanzplaner_v1";
 const VERSION_KEY = "finanzplaner_last_seen_version";
 
-const APP_VERSION = "1.7.0";
+const APP_VERSION = "1.8.0";
 const CHANGELOG = [
+  {
+    version: "1.8.0",
+    date: "2026-09-04",
+    changes: [
+      "Wichtiger Fix: Nach einem Update lädt der Browser jetzt garantiert die neuen Dateien statt versehentlich bis zu 10 Minuten alte aus dem Cache – kein manuelles Hard-Refresh mehr nötig.",
+      "Die Update-Prüfung reagiert jetzt außerdem sofort, wenn du wieder zum Tab zurückkommst, statt bis zu 5 Minuten auf die nächste automatische Prüfung zu warten.",
+    ],
+  },
   {
     version: "1.7.0",
     date: "2026-09-04",
@@ -1008,6 +1016,11 @@ function showServerUpdateBanner(serverVersion) {
 function startServerUpdateChecks() {
   setTimeout(checkForServerUpdate, 20000);
   setInterval(checkForServerUpdate, 5 * 60 * 1000);
+  // Sofort neu prüfen, sobald der Tab wieder sichtbar wird (z.B. nach längerer
+  // Zeit im Hintergrund), statt bis zu 5 Minuten auf den nächsten Timer zu warten.
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) checkForServerUpdate();
+  });
 }
 
 /* ===================== Events ===================== */
