@@ -85,6 +85,7 @@ main{max-width:1100px;margin:0 auto;padding:20px;}
   margin-bottom:20px;
 }
 .card h2{margin-top:0;font-size:1.05rem;}
+.card canvas{display:block;max-width:100%;}
 .hint{color:var(--muted);font-size:.85rem;margin-top:-6px;}
 
 .summary-row{
@@ -328,4 +329,40 @@ th{color:var(--muted);font-weight:600;font-size:.78rem;text-transform:uppercase;
   .app-header{padding:16px;}
   .total-balance .value{font-size:1.4rem;}
   main{padding:12px;}
+  .card{padding:16px;}
+  .app-header h1{font-size:1.15rem;}
+
+  /* Tabellen als Karten statt horizontal scrollbarer Zeilen */
+  .table-wrap table{width:100%;}
+  .table-wrap thead{display:none;}
+  .table-wrap tr{
+    display:block;
+    border:1px solid var(--border);
+    border-radius:10px;
+    padding:6px 12px;
+    margin-bottom:10px;
+  }
+  .table-wrap tr:last-child{margin-bottom:0;}
+  .table-wrap td{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:10px;
+    white-space:normal;
+    text-align:right;
+    border-bottom:1px solid var(--border);
+    padding:7px 0;
+  }
+  .table-wrap td:last-child{border-bottom:none;}
+  .table-wrap td::before{
+    content:attr(data-label);
+    color:var(--muted);
+    font-size:.75rem;
+    text-transform:uppercase;
+    letter-spacing:.03em;
+    text-align:left;
+  }
+  .table-wrap td:empty::before,
+  .table-wrap td[data-label=""]::before{content:none;}
+  .table-wrap td[data-label=""]{justify-content:flex-end;}
 }

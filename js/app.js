@@ -4,8 +4,16 @@
 const STORAGE_KEY = "finanzplaner_v1";
 const VERSION_KEY = "finanzplaner_last_seen_version";
 
-const APP_VERSION = "1.2.0";
+const APP_VERSION = "1.3.0";
 const CHANGELOG = [
+  {
+    version: "1.3.0",
+    date: "2026-09-04",
+    changes: [
+      "Spar-Start läuft jetzt automatisch ab der ersten Einzahlung auf ein Konto (statt eines festen Datums) – lässt sich bei Bedarf im Konten-Tab weiter manuell überschreiben.",
+      "Mobile Ansicht überarbeitet: Diagramm und Tabellen passen sich jetzt der Bildschirmbreite an (kein Verrutschen mehr auf Handy/iPad).",
+    ],
+  },
   {
     version: "1.2.0",
     date: "2026-09-04",
@@ -61,9 +69,9 @@ function seedState() {
     accounts: [
       { id: "girokonto", name: "Girokonto (frei verfügbar)", emoji: "💳", color: "#64748b", isDefault: true, distributionPercent: 10, goal: null },
       { id: "sparkonto", name: "Sparkonto", emoji: "🐷", color: "#16a34a", isDefault: false, distributionPercent: 50, goal: null },
-      { id: "auto-versicherung", name: "Auto: Versicherung & Steuer", emoji: "🚗", color: "#dc2626", isDefault: false, distributionPercent: 15, goal: { amount: 1350, date: nextSept, recurrence: "yearly", startDate: addYears(nextSept, -1) } },
+      { id: "auto-versicherung", name: "Auto: Versicherung & Steuer", emoji: "🚗", color: "#dc2626", isDefault: false, distributionPercent: 15, goal: { amount: 1350, date: nextSept, recurrence: "yearly", startDate: null } },
       { id: "auto-reparatur", name: "Auto: Reifen, Ölwechsel & Reparaturen", emoji: "🔧", color: "#ea580c", isDefault: false, distributionPercent: 10, goal: { amount: 400, date: null, recurrence: "none", startDate: null } },
-      { id: "urlaub", name: "Urlaub", emoji: "✈️", color: "#0284c7", isDefault: false, distributionPercent: 10, goal: { amount: 600, date: urlaubDate, recurrence: "once", startDate: monthAgo } },
+      { id: "urlaub", name: "Urlaub", emoji: "✈️", color: "#0284c7", isDefault: false, distributionPercent: 10, goal: { amount: 600, date: urlaubDate, recurrence: "once", startDate: null } },
       { id: "party", name: "Party & Spaß", emoji: "🎉", color: "#9333ea", isDefault: false, distributionPercent: 5, goal: { amount: 150, date: null, recurrence: "none", startDate: null } },
     ],
     transactions: [
@@ -140,11 +148,34 @@ function avgMonthlyContribution(accountId, days = 90) {
   return sum / (days / 30.44);
 }
 
-// Standard-Spar-Start: bei jährlichen Zielen 1 Jahr vor Fälligkeit (z.B. 1. September),
-// sonst heute.
-function defaultGoalStart(recurrence, dueDate) {
-  if (recurrence === "yearly" && dueDate) return addYears(dueDate, -1);
-  return todayISO();
+// Datum der letzten "Fixkosten bezahlt"-Buchung eines Kontos (Ende des vorherigen Sparzyklus).
+function lastPaymentDate(accountId) {
+  const dates = state.transactions
+    .filter((tx) => tx.accountId === accountId && tx.category === "Fixkosten bezahlt")
+    .map((tx) => tx.date)
+    .sort();
+  return dates.length ? dates[dates.length - 1] : null;
+}
+
+// Datum der ersten Einzahlung auf ein Konto (optional erst nach einem bestimmten Datum,
+// z.B. nach der letzten Zahlung eines wiederkehrenden Ziels).
+function firstContributionDate(accountId, afterDate) {
+  const dates = state.transactions
+    .filter((tx) => tx.accountId === accountId && tx.amount > 0 && (!afterDate || tx.date > afterDate))
+    .map((tx) => tx.date)
+    .sort();
+  return dates.length ? dates[0] : null;
+}
+
+// Der tatsächliche Spar-Start für ein Ziel: eine manuell gesetzte Überschreibung hat
+// Vorrang, sonst gilt automatisch das Datum der ersten Einzahlung (nach einer eventuellen
+// letzten Zahlung, bei wiederkehrenden Zielen). Ohne bisherige Einzahlung gibt's noch
+// keinen Start (null).
+function effectiveGoalStart(account) {
+  const g = account.goal;
+  if (!g) return null;
+  if (g.startDate) return g.startDate;
+  return firstContributionDate(account.id, lastPaymentDate(account.id));
 }
 
 function goalStatus(account) {
@@ -160,6 +191,8 @@ function goalStatus(account) {
     expectedPct = null,
     expectedAmount = null;
 
+  const start = effectiveGoalStart(account);
+
   if (reached) {
     trackLabel = "Ziel erreicht 🎉";
     trackClass = "done";
@@ -172,9 +205,9 @@ function goalStatus(account) {
       const monthsLeft = Math.max(daysLeft / 30.44, 0.1);
       neededPerMonth = remaining / monthsLeft;
 
-      if (g.startDate && g.startDate < g.date) {
-        const totalDays = Math.max(daysBetween(g.startDate, g.date), 1);
-        const elapsedDays = Math.min(Math.max(daysBetween(g.startDate, todayISO()), 0), totalDays);
+      if (start && start < g.date) {
+        const totalDays = Math.max(daysBetween(start, g.date), 1);
+        const elapsedDays = Math.min(Math.max(daysBetween(start, todayISO()), 0), totalDays);
         expectedPct = (elapsedDays / totalDays) * 100;
         expectedAmount = g.amount * (elapsedDays / totalDays);
         if (balance >= expectedAmount * 1.1) {
@@ -214,6 +247,7 @@ function goalStatus(account) {
     pct: Math.min(100, (balance / g.amount) * 100),
     expectedPct: expectedPct != null ? Math.min(100, expectedPct) : null,
     expectedAmount,
+    start,
   };
 }
 
@@ -286,7 +320,7 @@ function renderUpcoming() {
     item.innerHTML = `
       <div class="u-main">
         <span class="u-title">${a.emoji} ${a.name}</span>
-        <span class="u-sub">Ziel: ${fmt.format(a.goal.amount)} am ${fmtDate(a.goal.date)} ${a.goal.recurrence === "yearly" ? "(jährlich)" : ""} ${a.goal.startDate ? `· Spar-Start ${fmtDate(a.goal.startDate)}` : ""}</span>
+        <span class="u-sub">Ziel: ${fmt.format(a.goal.amount)} am ${fmtDate(a.goal.date)} ${a.goal.recurrence === "yearly" ? "(jährlich)" : ""} ${s.start ? `· Spar-Start ${fmtDate(s.start)}${a.goal.startDate ? "" : " (automatisch)"}` : "· noch keine Einzahlung"}</span>
         <span class="u-sub">Gespart: ${fmt.format(s.balance)} ${s.expectedAmount != null ? `· Soll heute: ${fmt.format(s.expectedAmount)}` : s.neededPerMonth != null ? `· benötigt ca. ${fmt.format(s.neededPerMonth)}/Monat` : ""}</span>
       </div>
       <div class="u-right">
@@ -366,9 +400,15 @@ function renderAccountCards() {
 /* ---- Balance chart (canvas line chart, cumulative total) ---- */
 function drawBalanceChart() {
   const canvas = document.getElementById("balanceChart");
+  const dpr = window.devicePixelRatio || 1;
+  const W = Math.max(240, Math.round(canvas.parentElement.clientWidth));
+  const H = Math.max(160, Math.min(260, Math.round(W * 0.29)));
+  canvas.style.width = W + "px";
+  canvas.style.height = H + "px";
+  canvas.width = Math.round(W * dpr);
+  canvas.height = Math.round(H * dpr);
   const ctx = canvas.getContext("2d");
-  const W = canvas.width,
-    H = canvas.height;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   ctx.clearRect(0, 0, W, H);
 
   const events = state.transactions
@@ -590,7 +630,12 @@ function renderDistHistory() {
   box.innerHTML = `<div class="table-wrap"><table><thead><tr><th>Datum</th><th>Konto</th><th>Betrag</th><th>Notiz</th></tr></thead><tbody>${rows
     .map((tx) => {
       const acc = state.accounts.find((a) => a.id === tx.accountId);
-      return `<tr><td>${fmtDate(tx.date)}</td><td>${acc ? acc.emoji + " " + acc.name : "?"}</td><td class="amount-pos">${fmt.format(tx.amount)}</td><td>${tx.note || ""}</td></tr>`;
+      return `<tr>
+        <td data-label="Datum">${fmtDate(tx.date)}</td>
+        <td data-label="Konto">${acc ? acc.emoji + " " + acc.name : "?"}</td>
+        <td data-label="Betrag" class="amount-pos">${fmt.format(tx.amount)}</td>
+        <td data-label="Notiz">${tx.note || ""}</td>
+      </tr>`;
     })
     .join("")}</tbody></table></div>`;
 }
@@ -624,7 +669,10 @@ function renderAccountsTab() {
             <option value="yearly" ${a.goal && a.goal.recurrence === "yearly" ? "selected" : ""}>Jährlich</option>
           </select>
         </label>
-        <label class="f-goal-start-wrap">Spar-Start (z.B. 1. September) <input type="date" class="f-goal-start" value="${a.goal && a.goal.startDate ? a.goal.startDate : ""}"></label>
+        <label class="f-goal-start-wrap">Spar-Start überschreiben (leer = automatisch ab 1. Einzahlung)
+          <input type="date" class="f-goal-start" value="${a.goal && a.goal.startDate ? a.goal.startDate : ""}">
+          ${a.goal && !a.goal.startDate ? `<span class="empty-hint">${(() => { const auto = effectiveGoalStart(a); return auto ? "aktuell automatisch: " + fmtDate(auto) : "noch keine Einzahlung erfasst"; })()}</span>` : ""}
+        </label>
       </div>
       <div class="card-actions">
         <span class="empty-hint">Kontostand: ${fmt.format(getBalance(a.id))}</span>
@@ -677,8 +725,7 @@ function saveAccountCard(id, card) {
       return;
     }
     const finalDate = recurrence === "none" ? null : date;
-    let startDate = card.querySelector(".f-goal-start").value || null;
-    if (!startDate && finalDate) startDate = defaultGoalStart(recurrence, finalDate);
+    const startDate = card.querySelector(".f-goal-start").value || null;
     a.goal = { amount, date: finalDate, recurrence, startDate: finalDate ? startDate : null };
   } else {
     a.goal = null;
@@ -773,12 +820,12 @@ function renderTxTable() {
       const acc = state.accounts.find((a) => a.id === tx.accountId);
       const cls = tx.amount >= 0 ? "amount-pos" : "amount-neg";
       return `<tr>
-        <td>${fmtDate(tx.date)}</td>
-        <td>${acc ? acc.emoji + " " + acc.name : "(gelöscht)"}</td>
-        <td>${tx.category || ""}</td>
-        <td>${tx.note || ""}</td>
-        <td class="${cls}">${fmt.format(tx.amount)}</td>
-        <td><button class="icon-btn tx-delete" data-id="${tx.id}" title="Löschen">✕</button></td>
+        <td data-label="Datum">${fmtDate(tx.date)}</td>
+        <td data-label="Konto">${acc ? acc.emoji + " " + acc.name : "(gelöscht)"}</td>
+        <td data-label="Kategorie">${tx.category || ""}</td>
+        <td data-label="Notiz">${tx.note || ""}</td>
+        <td data-label="Betrag" class="${cls}">${fmt.format(tx.amount)}</td>
+        <td data-label=""><button class="icon-btn tx-delete" data-id="${tx.id}" title="Löschen">✕</button></td>
       </tr>`;
     })
     .join("");
@@ -982,4 +1029,10 @@ document.addEventListener("DOMContentLoaded", () => {
   renderAll();
   renderVersionTag();
   checkForUpdate();
+
+  let resizeTimer;
+  window.addEventListener("resize", () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(drawBalanceChart, 150);
+  });
 });
