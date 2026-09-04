@@ -395,7 +395,86 @@ function computeDistribution(amount) {
 
 function renderDistributeTab() {
   document.getElementById("distDate").value = todayISO();
+  if (!document.getElementById("reconcileDate").value) {
+    document.getElementById("reconcileDate").value = todayISO();
+  }
+  document.getElementById("trackedTotalHint").textContent = fmt.format(getTotalBalance());
+  const lastReconcile = state.transactions
+    .filter((tx) => tx.category === "Kontostand-Abgleich")
+    .map((tx) => tx.date)
+    .sort()
+    .pop();
+  document.getElementById("lastReconcileHint").textContent = lastReconcile ? fmtDate(lastReconcile) : "noch nie";
   renderDistHistory();
+}
+
+/* ---- Kontostand abgleichen ---- */
+function renderReconcilePreview(newTotal) {
+  const box = document.getElementById("reconcilePreview");
+  if (isNaN(newTotal) || newTotal < 0) {
+    box.innerHTML = "";
+    return;
+  }
+  const tracked = getTotalBalance();
+  const diff = Math.round((newTotal - tracked) * 100) / 100;
+
+  if (Math.abs(diff) < 0.01) {
+    box.innerHTML = `<p class="empty-hint">Stimmt genau überein – keine Buchung nötig.</p>`;
+    return;
+  }
+  if (diff > 0) {
+    const rows = computeDistribution(diff);
+    box.innerHTML =
+      `<div class="dist-row"><span>Neues Geld</span><span>${fmt.format(diff)}</span></div>` +
+      rows
+        .map(
+          (r) =>
+            `<div class="dist-row"><span>${r.account.emoji} ${r.account.name} (${r.pct.toFixed(0)}%)</span><span>${fmt.format(r.amount)}</span></div>`
+        )
+        .join("");
+  } else {
+    const def = getDefaultAccount();
+    box.innerHTML = `<div class="dist-row"><span>Nicht einzeln erfasste Ausgaben</span><span>${fmt.format(diff)}</span></div>
+      <div class="dist-row"><span>Wird abgezogen von: ${def.emoji} ${def.name}</span><span>${fmt.format(diff)}</span></div>`;
+  }
+}
+
+function reconcileBalance(newTotal, date) {
+  const tracked = getTotalBalance();
+  const diff = Math.round((newTotal - tracked) * 100) / 100;
+  if (Math.abs(diff) < 0.01) {
+    toast("Stimmt schon überein.");
+    return;
+  }
+  if (diff > 0) {
+    const rows = computeDistribution(diff);
+    rows.forEach((r) => {
+      if (r.amount <= 0) return;
+      state.transactions.push({
+        id: uid(),
+        date,
+        accountId: r.account.id,
+        amount: r.amount,
+        category: "Kontostand-Abgleich",
+        note: "Neues Geld laut Bank-Abgleich",
+        createdAt: Date.now(),
+      });
+    });
+  } else {
+    const def = getDefaultAccount();
+    state.transactions.push({
+      id: uid(),
+      date,
+      accountId: def.id,
+      amount: diff,
+      category: "Kontostand-Abgleich",
+      note: "Nicht einzeln erfasste Ausgaben laut Bank-Abgleich",
+      createdAt: Date.now(),
+    });
+  }
+  saveState();
+  renderAll();
+  toast(diff > 0 ? `${fmt.format(diff)} verteilt.` : `${fmt.format(Math.abs(diff))} vom Girokonto abgezogen.`);
 }
 
 function renderDistPreview(amount) {
@@ -641,6 +720,20 @@ function setupTabs() {
 }
 
 function setupForms() {
+  document.getElementById("reconcileAmount").addEventListener("input", (e) => {
+    renderReconcilePreview(parseFloat(e.target.value));
+  });
+
+  document.getElementById("reconcileForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const newTotal = parseFloat(document.getElementById("reconcileAmount").value);
+    const date = document.getElementById("reconcileDate").value || todayISO();
+    if (isNaN(newTotal) || newTotal < 0) return;
+    reconcileBalance(newTotal, date);
+    document.getElementById("reconcileAmount").value = "";
+    document.getElementById("reconcilePreview").innerHTML = "";
+  });
+
   document.getElementById("distAmount").addEventListener("input", (e) => {
     renderDistPreview(parseFloat(e.target.value));
   });
