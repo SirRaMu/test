@@ -2,6 +2,44 @@
 "use strict";
 
 const STORAGE_KEY = "finanzplaner_v1";
+const VERSION_KEY = "finanzplaner_last_seen_version";
+
+const APP_VERSION = "1.2.0";
+const CHANGELOG = [
+  {
+    version: "1.2.0",
+    date: "2026-09-04",
+    changes: [
+      "Versionsverlauf: Die App merkt sich, welche Version du zuletzt gesehen hast, und zeigt beim Öffnen an, was sich geändert hat.",
+      "Sparziele haben jetzt einen \"Spar-Start\" (Standard: 1. September). Die App vergleicht den Soll-Stand (verstrichene Zeit) mit dem Ist-Stand (Kontostand) statt nur grob zu schätzen.",
+    ],
+  },
+  {
+    version: "1.1.0",
+    date: "2026-09-04",
+    changes: [
+      "Neu: \"Kontostand abgleichen\" – trag den Kontostand aus deiner Banking-App ein, die Differenz zum bisher erfassten Stand wird automatisch verteilt bzw. abgezogen.",
+    ],
+  },
+  {
+    version: "1.0.0",
+    date: "2026-09-03",
+    changes: [
+      "Erste Version: Konten mit Sparzielen, Geld verteilen nach Prozentsätzen, Transaktionen, Kontostand-Verlauf, Backup/Import.",
+    ],
+  },
+];
+
+function compareVersions(a, b) {
+  const pa = a.split(".").map(Number);
+  const pb = b.split(".").map(Number);
+  for (let i = 0; i < 3; i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d) return d;
+  }
+  return 0;
+}
+
 const fmt = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
 const fmtDate = (iso) => {
   if (!iso) return "-";
@@ -18,14 +56,15 @@ function seedState() {
   const t = todayISO();
   const monthAgo = shiftDays(t, -30);
   const nextSept = nextOccurrence("09-01");
+  const urlaubDate = shiftDays(t, 270);
   return {
     accounts: [
       { id: "girokonto", name: "Girokonto (frei verfügbar)", emoji: "💳", color: "#64748b", isDefault: true, distributionPercent: 10, goal: null },
       { id: "sparkonto", name: "Sparkonto", emoji: "🐷", color: "#16a34a", isDefault: false, distributionPercent: 50, goal: null },
-      { id: "auto-versicherung", name: "Auto: Versicherung & Steuer", emoji: "🚗", color: "#dc2626", isDefault: false, distributionPercent: 15, goal: { amount: 1350, date: nextSept, recurrence: "yearly" } },
-      { id: "auto-reparatur", name: "Auto: Reifen, Ölwechsel & Reparaturen", emoji: "🔧", color: "#ea580c", isDefault: false, distributionPercent: 10, goal: { amount: 400, date: null, recurrence: "none" } },
-      { id: "urlaub", name: "Urlaub", emoji: "✈️", color: "#0284c7", isDefault: false, distributionPercent: 10, goal: { amount: 600, date: shiftDays(t, 270), recurrence: "once" } },
-      { id: "party", name: "Party & Spaß", emoji: "🎉", color: "#9333ea", isDefault: false, distributionPercent: 5, goal: { amount: 150, date: null, recurrence: "none" } },
+      { id: "auto-versicherung", name: "Auto: Versicherung & Steuer", emoji: "🚗", color: "#dc2626", isDefault: false, distributionPercent: 15, goal: { amount: 1350, date: nextSept, recurrence: "yearly", startDate: addYears(nextSept, -1) } },
+      { id: "auto-reparatur", name: "Auto: Reifen, Ölwechsel & Reparaturen", emoji: "🔧", color: "#ea580c", isDefault: false, distributionPercent: 10, goal: { amount: 400, date: null, recurrence: "none", startDate: null } },
+      { id: "urlaub", name: "Urlaub", emoji: "✈️", color: "#0284c7", isDefault: false, distributionPercent: 10, goal: { amount: 600, date: urlaubDate, recurrence: "once", startDate: monthAgo } },
+      { id: "party", name: "Party & Spaß", emoji: "🎉", color: "#9333ea", isDefault: false, distributionPercent: 5, goal: { amount: 150, date: null, recurrence: "none", startDate: null } },
     ],
     transactions: [
       { id: uid(), date: monthAgo, accountId: "girokonto", amount: 35, category: "Startguthaben", note: "Beispieldaten", createdAt: Date.now() },
@@ -101,6 +140,13 @@ function avgMonthlyContribution(accountId, days = 90) {
   return sum / (days / 30.44);
 }
 
+// Standard-Spar-Start: bei jährlichen Zielen 1 Jahr vor Fälligkeit (z.B. 1. September),
+// sonst heute.
+function defaultGoalStart(recurrence, dueDate) {
+  if (recurrence === "yearly" && dueDate) return addYears(dueDate, -1);
+  return todayISO();
+}
+
 function goalStatus(account) {
   if (!account.goal || !account.goal.amount) return null;
   const g = account.goal;
@@ -110,7 +156,9 @@ function goalStatus(account) {
   let daysLeft = null,
     neededPerMonth = null,
     trackLabel = null,
-    trackClass = "ok";
+    trackClass = "ok",
+    expectedPct = null,
+    expectedAmount = null;
 
   if (reached) {
     trackLabel = "Ziel erreicht 🎉";
@@ -123,13 +171,31 @@ function goalStatus(account) {
     } else {
       const monthsLeft = Math.max(daysLeft / 30.44, 0.1);
       neededPerMonth = remaining / monthsLeft;
-      const avg = avgMonthlyContribution(account.id);
-      if (avg + 0.5 >= neededPerMonth) {
-        trackLabel = "Auf Kurs";
-        trackClass = "ok";
+
+      if (g.startDate && g.startDate < g.date) {
+        const totalDays = Math.max(daysBetween(g.startDate, g.date), 1);
+        const elapsedDays = Math.min(Math.max(daysBetween(g.startDate, todayISO()), 0), totalDays);
+        expectedPct = (elapsedDays / totalDays) * 100;
+        expectedAmount = g.amount * (elapsedDays / totalDays);
+        if (balance >= expectedAmount * 1.1) {
+          trackLabel = "Voraus";
+          trackClass = "ok";
+        } else if (balance >= expectedAmount) {
+          trackLabel = "Auf Kurs";
+          trackClass = "ok";
+        } else {
+          trackLabel = "Aufholbedarf";
+          trackClass = "warn";
+        }
       } else {
-        trackLabel = "Aufholbedarf";
-        trackClass = "warn";
+        const avg = avgMonthlyContribution(account.id);
+        if (avg + 0.5 >= neededPerMonth) {
+          trackLabel = "Auf Kurs";
+          trackClass = "ok";
+        } else {
+          trackLabel = "Aufholbedarf";
+          trackClass = "warn";
+        }
       }
     }
   } else {
@@ -137,7 +203,18 @@ function goalStatus(account) {
     trackClass = "ok";
   }
 
-  return { balance, remaining, reached, daysLeft, neededPerMonth, trackLabel, trackClass, pct: Math.min(100, (balance / g.amount) * 100) };
+  return {
+    balance,
+    remaining,
+    reached,
+    daysLeft,
+    neededPerMonth,
+    trackLabel,
+    trackClass,
+    pct: Math.min(100, (balance / g.amount) * 100),
+    expectedPct: expectedPct != null ? Math.min(100, expectedPct) : null,
+    expectedAmount,
+  };
 }
 
 /* ===================== Rendering ===================== */
@@ -148,6 +225,7 @@ function renderAll() {
   renderDistributeTab();
   renderAccountsTab();
   renderTransactionsTab();
+  renderVersionHistory();
 }
 
 function renderHeader() {
@@ -208,8 +286,8 @@ function renderUpcoming() {
     item.innerHTML = `
       <div class="u-main">
         <span class="u-title">${a.emoji} ${a.name}</span>
-        <span class="u-sub">Ziel: ${fmt.format(a.goal.amount)} am ${fmtDate(a.goal.date)} ${a.goal.recurrence === "yearly" ? "(jährlich)" : ""}</span>
-        <span class="u-sub">Gespart: ${fmt.format(s.balance)} ${s.neededPerMonth != null ? `· benötigt ca. ${fmt.format(s.neededPerMonth)}/Monat` : ""}</span>
+        <span class="u-sub">Ziel: ${fmt.format(a.goal.amount)} am ${fmtDate(a.goal.date)} ${a.goal.recurrence === "yearly" ? "(jährlich)" : ""} ${a.goal.startDate ? `· Spar-Start ${fmtDate(a.goal.startDate)}` : ""}</span>
+        <span class="u-sub">Gespart: ${fmt.format(s.balance)} ${s.expectedAmount != null ? `· Soll heute: ${fmt.format(s.expectedAmount)}` : s.neededPerMonth != null ? `· benötigt ca. ${fmt.format(s.neededPerMonth)}/Monat` : ""}</span>
       </div>
       <div class="u-right">
         <span class="badge ${s.trackClass}">${days != null ? (days >= 0 ? days + " Tage · " : "") : ""}${s.trackLabel}</span>
@@ -241,6 +319,7 @@ function payGoal(accountId) {
     createdAt: Date.now(),
   });
   if (a.goal.recurrence === "yearly") {
+    if (a.goal.startDate) a.goal.startDate = addYears(a.goal.startDate, 1);
     a.goal.date = addYears(a.goal.date, 1);
   } else {
     a.goal = null;
@@ -267,11 +346,15 @@ function renderAccountCards() {
       <div class="acc-balance">${fmt.format(balance)}</div>
       ${
         s
-          ? `<div class="progress-outer"><div class="progress-inner" style="width:${s.pct}%;background:${a.color}"></div></div>
+          ? `<div class="progress-outer">
+               <div class="progress-inner" style="width:${s.pct}%;background:${a.color}"></div>
+               ${s.expectedPct != null ? `<div class="progress-marker" style="left:${s.expectedPct}%" title="Soll heute: ${fmt.format(s.expectedAmount)}"></div>` : ""}
+             </div>
              <div class="acc-goal-meta">
                <span>Ziel: ${fmt.format(a.goal.amount)}${a.goal.date ? " · " + fmtDate(a.goal.date) : ""}</span>
                <span>${s.pct.toFixed(0)}%</span>
              </div>
+             ${s.expectedAmount != null ? `<div class="acc-goal-meta"><span>Soll heute: ${fmt.format(s.expectedAmount)}</span></div>` : ""}
              <span class="badge ${s.trackClass}">${s.trackLabel}</span>`
           : `<div class="acc-goal-meta"><span>Kein Sparziel gesetzt</span></div>`
       }
@@ -541,6 +624,7 @@ function renderAccountsTab() {
             <option value="yearly" ${a.goal && a.goal.recurrence === "yearly" ? "selected" : ""}>Jährlich</option>
           </select>
         </label>
+        <label class="f-goal-start-wrap">Spar-Start (z.B. 1. September) <input type="date" class="f-goal-start" value="${a.goal && a.goal.startDate ? a.goal.startDate : ""}"></label>
       </div>
       <div class="card-actions">
         <span class="empty-hint">Kontostand: ${fmt.format(getBalance(a.id))}</span>
@@ -553,6 +637,14 @@ function renderAccountsTab() {
     card.querySelector(".f-hasgoal").addEventListener("change", (e) => {
       card.classList.toggle("has-goal", e.target.checked);
     });
+
+    const recurrenceSelect = card.querySelector(".f-goal-recurrence");
+    const startWrap = card.querySelector(".f-goal-start-wrap");
+    const updateStartVisibility = () => {
+      startWrap.style.display = recurrenceSelect.value === "none" ? "none" : "";
+    };
+    updateStartVisibility();
+    recurrenceSelect.addEventListener("change", updateStartVisibility);
 
     card.querySelector(".btn-save").addEventListener("click", () => saveAccountCard(a.id, card));
     const delBtn = card.querySelector(".btn-delete");
@@ -584,7 +676,10 @@ function saveAccountCard(id, card) {
       alert("Bitte einen gültigen Zielbetrag angeben.");
       return;
     }
-    a.goal = { amount, date: recurrence === "none" ? null : date, recurrence };
+    const finalDate = recurrence === "none" ? null : date;
+    let startDate = card.querySelector(".f-goal-start").value || null;
+    if (!startDate && finalDate) startDate = defaultGoalStart(recurrence, finalDate);
+    a.goal = { amount, date: finalDate, recurrence, startDate: finalDate ? startDate : null };
   } else {
     a.goal = null;
   }
@@ -696,6 +791,56 @@ function renderTxTable() {
       renderAll();
     })
   );
+}
+
+/* ---- Versionsverlauf ---- */
+function renderVersionTag() {
+  document.getElementById("versionTag").textContent = "v" + APP_VERSION;
+}
+
+function renderVersionHistory() {
+  const box = document.getElementById("versionHistory");
+  box.innerHTML = CHANGELOG.map(
+    (v) => `
+      <div class="version-entry">
+        <div class="version-entry-head"><strong>v${v.version}</strong><span>${fmtDate(v.date)}</span></div>
+        <ul>${v.changes.map((c) => `<li>${c}</li>`).join("")}</ul>
+      </div>`
+  ).join("");
+}
+
+function checkForUpdate() {
+  const lastSeen = localStorage.getItem(VERSION_KEY);
+  if (lastSeen === APP_VERSION) return;
+
+  const newEntries = lastSeen
+    ? CHANGELOG.filter((v) => compareVersions(v.version, lastSeen) > 0)
+    : [CHANGELOG[0]];
+
+  if (!newEntries.length) {
+    localStorage.setItem(VERSION_KEY, APP_VERSION);
+    return;
+  }
+
+  const body = document.getElementById("updateModalBody");
+  body.innerHTML =
+    (lastSeen ? "" : `<p class="hint">Willkommen! Das ist die aktuelle Version deines Finanzplaners:</p>`) +
+    newEntries
+      .map(
+        (v) => `
+        <div class="version-entry">
+          <div class="version-entry-head"><strong>v${v.version}</strong><span>${fmtDate(v.date)}</span></div>
+          <ul>${v.changes.map((c) => `<li>${c}</li>`).join("")}</ul>
+        </div>`
+      )
+      .join("");
+
+  document.getElementById("updateModalOverlay").hidden = false;
+}
+
+function closeUpdateModal() {
+  document.getElementById("updateModalOverlay").hidden = true;
+  localStorage.setItem(VERSION_KEY, APP_VERSION);
 }
 
 /* ===================== Events ===================== */
@@ -826,6 +971,8 @@ function setupForms() {
     renderAll();
     toast("Zurückgesetzt.");
   });
+
+  document.getElementById("updateModalClose").addEventListener("click", closeUpdateModal);
 }
 
 /* ===================== Init ===================== */
@@ -833,4 +980,6 @@ document.addEventListener("DOMContentLoaded", () => {
   setupTabs();
   setupForms();
   renderAll();
+  renderVersionTag();
+  checkForUpdate();
 });
