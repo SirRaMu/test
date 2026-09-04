@@ -4,8 +4,15 @@
 const STORAGE_KEY = "finanzplaner_v1";
 const VERSION_KEY = "finanzplaner_last_seen_version";
 
-const APP_VERSION = "1.6.0";
+const APP_VERSION = "1.7.0";
 const CHANGELOG = [
+  {
+    version: "1.7.0",
+    date: "2026-09-04",
+    changes: [
+      "Neuer Info-Button (ℹ️) bei jedem Sparziel-Konto: zeigt genau, wie viel du ab jetzt noch täglich und monatlich einzahlen musst, um das Ziel pünktlich zu schaffen.",
+    ],
+  },
   {
     version: "1.6.0",
     date: "2026-09-04",
@@ -213,6 +220,7 @@ function goalStatus(account) {
   const reached = balance >= g.amount;
   let daysLeft = null,
     neededPerMonth = null,
+    neededPerDay = null,
     trackLabel = null,
     trackClass = "ok",
     expectedPct = null,
@@ -231,6 +239,7 @@ function goalStatus(account) {
     } else {
       const monthsLeft = Math.max(daysLeft / 30.44, 0.1);
       neededPerMonth = remaining / monthsLeft;
+      neededPerDay = remaining / Math.max(daysLeft, 1);
 
       if (start && start < g.date) {
         const totalDays = Math.max(daysBetween(start, g.date), 1);
@@ -269,6 +278,7 @@ function goalStatus(account) {
     reached,
     daysLeft,
     neededPerMonth,
+    neededPerDay,
     trackLabel,
     trackClass,
     pct: Math.min(100, (balance / g.amount) * 100),
@@ -419,12 +429,54 @@ function renderAccountCards() {
                <span>${s.pct.toFixed(0)}%</span>
              </div>
              ${s.expectedAmount != null ? `<div class="acc-goal-meta"><span>Soll heute: ${fmt.format(s.expectedAmount)}</span></div>` : ""}
-             <span class="badge ${s.trackClass}">${s.trackLabel}</span>`
+             <div class="acc-badge-row">
+               <span class="badge ${s.trackClass}">${s.trackLabel}</span>
+               <button class="icon-btn info-btn" data-id="${a.id}" title="Wie viel muss ich täglich/monatlich sparen?">ℹ️</button>
+             </div>`
           : `<div class="acc-goal-meta"><span>Kein Sparziel gesetzt</span></div>`
       }
     `;
     grid.appendChild(card);
   });
+
+  grid.querySelectorAll(".info-btn").forEach((btn) =>
+    btn.addEventListener("click", () => showGoalInfo(btn.dataset.id))
+  );
+}
+
+function showGoalInfo(accountId) {
+  const a = state.accounts.find((x) => x.id === accountId);
+  if (!a || !a.goal) return;
+  const s = goalStatus(a);
+  const g = a.goal;
+
+  document.getElementById("goalInfoTitle").textContent = `ℹ️ ${a.emoji} ${a.name}`;
+
+  let body = `<p class="hint">Ziel: <strong>${fmt.format(g.amount)}</strong>${g.date ? ` bis <strong>${fmtDate(g.date)}</strong>` : ""}${g.recurrence === "yearly" ? " (jährlich)" : ""}</p>
+    <p class="hint">Bereits gespart: <strong>${fmt.format(s.balance)}</strong> · Noch nötig: <strong>${fmt.format(s.remaining)}</strong></p>`;
+
+  if (s.reached) {
+    body += `<p class="hint">🎉 Geschafft! Du hast dieses Sparziel bereits erreicht.</p>`;
+  } else if (!g.date) {
+    body += `<p class="hint">Für dieses Ziel ist noch kein Datum gesetzt. Trag im Tab "Konten" ein Zieldatum ein, damit ich dir sagen kann, wie viel du täglich/monatlich sparen musst.</p>`;
+  } else if (s.daysLeft < 0) {
+    body += `<p class="hint">⚠️ Das Zieldatum ist bereits ${Math.abs(s.daysLeft)} Tage überschritten. Buch die Zahlung ab (siehe "Übersicht") oder verschieb das Zieldatum im Tab "Konten".</p>`;
+  } else {
+    body += `
+      <div class="version-entry">
+        <div class="version-entry-head"><strong>Noch ${s.daysLeft} Tage</strong><span>bis ${fmtDate(g.date)}</span></div>
+      </div>
+      <p class="hint">Damit du es rechtzeitig schaffst, musst du ab jetzt noch einzahlen:</p>
+      <div class="goal-info-rates">
+        <div class="goal-info-rate"><span class="num">${fmt.format(s.neededPerDay)}</span><span class="lbl">pro Tag</span></div>
+        <div class="goal-info-rate"><span class="num">${fmt.format(s.neededPerMonth)}</span><span class="lbl">pro Monat</span></div>
+      </div>
+      <p class="hint">Status: <span class="badge ${s.trackClass}">${s.trackLabel}</span>${s.expectedAmount != null ? ` · Soll heute laut Spar-Start: ${fmt.format(s.expectedAmount)}` : ""}</p>
+    `;
+  }
+
+  document.getElementById("goalInfoBody").innerHTML = body;
+  document.getElementById("goalInfoModalOverlay").hidden = false;
 }
 
 /* ---- Balance chart (canvas line chart, cumulative total) ---- */
@@ -1098,6 +1150,10 @@ function setupForms() {
   });
 
   document.getElementById("updateModalClose").addEventListener("click", closeUpdateModal);
+
+  document.getElementById("goalInfoClose").addEventListener("click", () => {
+    document.getElementById("goalInfoModalOverlay").hidden = true;
+  });
 
   document.getElementById("serverUpdateReloadBtn").addEventListener("click", () => {
     location.href = location.pathname + "?refresh=" + Date.now();
