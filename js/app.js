@@ -4,8 +4,15 @@
 const STORAGE_KEY = "finanzplaner_v1";
 const VERSION_KEY = "finanzplaner_last_seen_version";
 
-const APP_VERSION = "1.4.0";
+const APP_VERSION = "1.5.0";
 const CHANGELOG = [
+  {
+    version: "1.5.0",
+    date: "2026-09-04",
+    changes: [
+      "Die App prüft jetzt regelmäßig im Hintergrund (alle 5 Minuten, solange die Seite offen ist), ob eine neue Version veröffentlicht wurde, und zeigt dann unten einen Hinweis mit \"Aktualisieren\" oder \"Später\".",
+    ],
+  },
   {
     version: "1.4.0",
     date: "2026-09-04",
@@ -898,6 +905,41 @@ function closeUpdateModal() {
   localStorage.setItem(VERSION_KEY, APP_VERSION);
 }
 
+/* ---- Regelmäßige Prüfung auf eine neu veröffentlichte Version ---- */
+// Merkt sich (nur für diese Session), welche Version schon "Später" geklickt wurde,
+// damit nicht bei jeder Prüfung erneut genervt wird.
+let dismissedServerVersion = null;
+
+async function checkForServerUpdate() {
+  if (document.hidden) return;
+  try {
+    const res = await fetch("js/app.js?_=" + Date.now(), { cache: "no-store" });
+    if (!res.ok) return;
+    const text = await res.text();
+    const match = text.match(/APP_VERSION\s*=\s*"([^"]+)"/);
+    if (!match) return;
+    const serverVersion = match[1];
+    if (compareVersions(serverVersion, APP_VERSION) > 0 && serverVersion !== dismissedServerVersion) {
+      showServerUpdateBanner(serverVersion);
+    }
+  } catch (e) {
+    // Kein Netzwerk, offline oder lokal per file:// geöffnet – einfach ignorieren.
+  }
+}
+
+function showServerUpdateBanner(serverVersion) {
+  const banner = document.getElementById("serverUpdateBanner");
+  document.getElementById("serverUpdateText").textContent =
+    `🔄 Neue Version v${serverVersion} verfügbar (du nutzt gerade v${APP_VERSION})`;
+  banner.dataset.version = serverVersion;
+  banner.hidden = false;
+}
+
+function startServerUpdateChecks() {
+  setTimeout(checkForServerUpdate, 20000);
+  setInterval(checkForServerUpdate, 5 * 60 * 1000);
+}
+
 /* ===================== Events ===================== */
 
 function toast(msg) {
@@ -1033,6 +1075,14 @@ function setupForms() {
   });
 
   document.getElementById("updateModalClose").addEventListener("click", closeUpdateModal);
+
+  document.getElementById("serverUpdateReloadBtn").addEventListener("click", () => {
+    location.href = location.pathname + "?refresh=" + Date.now();
+  });
+  document.getElementById("serverUpdateDismissBtn").addEventListener("click", () => {
+    dismissedServerVersion = document.getElementById("serverUpdateBanner").dataset.version;
+    document.getElementById("serverUpdateBanner").hidden = true;
+  });
 }
 
 /* ===================== Init ===================== */
@@ -1042,6 +1092,7 @@ document.addEventListener("DOMContentLoaded", () => {
   renderAll();
   renderVersionTag();
   checkForUpdate();
+  startServerUpdateChecks();
 
   let resizeTimer;
   window.addEventListener("resize", () => {
