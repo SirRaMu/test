@@ -6,7 +6,7 @@
 <title>Mein Finanzplaner</title>
 <!-- ?v= muss bei jedem Release zusammen mit APP_VERSION in js/app.js erhöht werden,
      sonst liefert der Browser-Cache (max-age 10 Min. auf GitHub Pages) alte Dateien aus. -->
-<link rel="stylesheet" href="css/style.css?v=1.9.0">
+<link rel="stylesheet" href="css/style.css?v=1.10.0">
 </head>
 <body>
 
@@ -87,10 +87,13 @@
   <section id="tab-verteilen" class="tab-panel">
     <div class="card">
       <h2>💰 Einnahme verteilen</h2>
-      <p class="hint">Trag ein, wie viel Geld reinkommt (z.&nbsp;B. Taschengeld oder Lohn). Die Software verteilt es automatisch nach deinen Prozentsätzen auf deine Konten.</p>
+      <p class="hint">Trag ein, wie viel Geld reinkommt (z.&nbsp;B. Taschengeld oder Lohn). Standardmäßig verteilt die Software es automatisch nach deinen Prozentsätzen auf deine Konten – du kannst es aber auch direkt einem einzelnen Konto gutschreiben.</p>
       <form id="distributeForm" class="inline-form">
         <label>Betrag (€)
           <input type="number" id="distAmount" step="0.01" min="0.01" required placeholder="z.B. 150">
+        </label>
+        <label>Ziel
+          <select id="distTarget"></select>
         </label>
         <label>Quelle
           <select id="distSource">
@@ -110,10 +113,13 @@
 
     <div class="card">
       <h2>💸 Ausgabe buchen</h2>
-      <p class="hint">Hast du gerade Geld ausgegeben (z.&nbsp;B. Kino, Essen, Bus)? Trag den Betrag ein – er wird von deinem frei verfügbaren Girokonto abgezogen. Für größere geplante Kosten (z.&nbsp;B. Auto-Versicherung) nutz stattdessen den Button "Als bezahlt buchen" beim jeweiligen Sparziel auf der Übersicht.</p>
+      <p class="hint">Hast du gerade Geld ausgegeben (z.&nbsp;B. Kino, Essen, Bus)? Standardmäßig wird das von deinem frei verfügbaren Girokonto abgezogen – du kannst aber auch ein anderes Konto wählen, z.&nbsp;B. um spontan 10&nbsp;€ von "Auto: Versicherung &amp; Steuer" abzuziehen. Für die reguläre Fällig-Zahlung eines Sparziels nutz stattdessen "Als bezahlt buchen" auf der Übersicht.</p>
       <form id="expenseForm" class="inline-form">
         <label>Betrag (€)
           <input type="number" id="expenseAmount" step="0.01" min="0.01" required placeholder="z.B. 10">
+        </label>
+        <label>Konto
+          <select id="expenseTarget"></select>
         </label>
         <label>Datum
           <input type="date" id="expenseDate" required>
@@ -188,6 +194,6 @@
 
 <div id="toast" class="toast"></div>
 
-<script src="js/app.js?v=1.9.0"></script>
+<script src="js/app.js?v=1.10.0"></script>
 </body>
 </html>

@@ -4,8 +4,15 @@
 const STORAGE_KEY = "finanzplaner_v1";
 const VERSION_KEY = "finanzplaner_last_seen_version";
 
-const APP_VERSION = "1.9.0";
+const APP_VERSION = "1.10.0";
 const CHANGELOG = [
+  {
+    version: "1.10.0",
+    date: "2026-09-04",
+    changes: [
+      "Bei Einnahme und Ausgabe gibt es jetzt eine Konto-Auswahl. Standard (\"Favorit\") bleibt wie gehabt: Einnahmen werden auf alle Konten verteilt, Ausgaben vom Girokonto abgezogen – du kannst aber auch gezielt ein einzelnes Konto wählen, z.B. um spontan von \"Auto: Versicherung & Steuer\" abzuziehen.",
+    ],
+  },
   {
     version: "1.9.0",
     date: "2026-09-04",
@@ -613,9 +620,35 @@ function computeDistribution(amount) {
   return rows;
 }
 
+// Befüllt ein <select> mit Konten. Optional mit einer vorangestellten
+// "Alle verteilen"-Option (value ""). Ohne diese Option landet automatisch
+// das Standardkonto (Girokonto) an erster Stelle und ist vorausgewählt.
+function fillTargetSelect(select, allOptionLabel) {
+  const prev = select.value;
+  select.innerHTML = "";
+  if (allOptionLabel) {
+    const opt = document.createElement("option");
+    opt.value = "";
+    opt.textContent = allOptionLabel;
+    select.appendChild(opt);
+  }
+  const def = getDefaultAccount();
+  const ordered = [def, ...state.accounts.filter((a) => a.id !== def.id)];
+  ordered.forEach((a) => {
+    const opt = document.createElement("option");
+    opt.value = a.id;
+    opt.textContent = `${a.emoji} ${a.name}`;
+    select.appendChild(opt);
+  });
+  const hasPrev = [...select.options].some((o) => o.value === prev);
+  select.value = hasPrev ? prev : select.options[0].value;
+}
+
 function renderDistributeTab() {
   document.getElementById("distDate").value = todayISO();
   document.getElementById("expenseDate").value = todayISO();
+  fillTargetSelect(document.getElementById("distTarget"), "🔀 Alle Konten (nach Prozentsätzen verteilen)");
+  fillTargetSelect(document.getElementById("expenseTarget"));
   renderDistHistory();
 }
 
@@ -705,6 +738,16 @@ function renderDistPreview(amount) {
   const box = document.getElementById("distPreview");
   if (!amount || amount <= 0) {
     box.innerHTML = "";
+    return;
+  }
+  const targetId = document.getElementById("distTarget").value;
+  if (targetId) {
+    const target = state.accounts.find((a) => a.id === targetId);
+    if (!target) {
+      box.innerHTML = "";
+      return;
+    }
+    box.innerHTML = `<div class="dist-row"><span>${target.emoji} ${target.name} (100%)</span><span>${fmt.format(amount)}</span></div>`;
     return;
   }
   const rows = computeDistribution(amount);
@@ -1013,31 +1056,51 @@ function setupForms() {
   document.getElementById("distAmount").addEventListener("input", (e) => {
     renderDistPreview(parseFloat(e.target.value));
   });
+  document.getElementById("distTarget").addEventListener("change", () => {
+    renderDistPreview(parseFloat(document.getElementById("distAmount").value));
+  });
 
   document.getElementById("distributeForm").addEventListener("submit", (e) => {
     e.preventDefault();
     const amount = parseFloat(document.getElementById("distAmount").value);
     const source = document.getElementById("distSource").value;
     const date = document.getElementById("distDate").value || todayISO();
+    const targetId = document.getElementById("distTarget").value;
     if (!amount || amount <= 0) return;
-    const rows = computeDistribution(amount);
-    rows.forEach((r) => {
-      if (r.amount <= 0) return;
+
+    if (targetId) {
+      const target = state.accounts.find((a) => a.id === targetId);
+      if (!target) return;
       state.transactions.push({
         id: uid(),
         date,
-        accountId: r.account.id,
-        amount: r.amount,
+        accountId: target.id,
+        amount,
         category: "Verteilung",
         note: source,
         createdAt: Date.now(),
       });
-    });
+      toast(`${fmt.format(amount)} zu ${target.emoji} ${target.name} hinzugefügt.`);
+    } else {
+      const rows = computeDistribution(amount);
+      rows.forEach((r) => {
+        if (r.amount <= 0) return;
+        state.transactions.push({
+          id: uid(),
+          date,
+          accountId: r.account.id,
+          amount: r.amount,
+          category: "Verteilung",
+          note: source,
+          createdAt: Date.now(),
+        });
+      });
+      toast(`${fmt.format(amount)} verteilt.`);
+    }
     saveState();
     document.getElementById("distAmount").value = "";
     document.getElementById("distPreview").innerHTML = "";
     renderAll();
-    toast(`${fmt.format(amount)} verteilt.`);
   });
 
   document.getElementById("addAccountBtn").addEventListener("click", addAccount);
@@ -1052,14 +1115,15 @@ function setupForms() {
     const amount = parseFloat(document.getElementById("expenseAmount").value);
     const date = document.getElementById("expenseDate").value || todayISO();
     const note = document.getElementById("expenseNote").value.trim();
+    const targetId = document.getElementById("expenseTarget").value;
+    const target = state.accounts.find((a) => a.id === targetId) || getDefaultAccount();
     if (!amount || amount <= 0) return;
-    const def = getDefaultAccount();
-    state.transactions.push({ id: uid(), date, accountId: def.id, amount: -amount, category: "Ausgabe", note, createdAt: Date.now() });
+    state.transactions.push({ id: uid(), date, accountId: target.id, amount: -amount, category: "Ausgabe", note, createdAt: Date.now() });
     saveState();
     document.getElementById("expenseForm").reset();
     document.getElementById("expenseDate").value = todayISO();
     renderAll();
-    toast(`${fmt.format(amount)} Ausgabe gebucht.`);
+    toast(`${fmt.format(amount)} von ${target.emoji} ${target.name} abgezogen.`);
   });
 
   document.getElementById("exportBtn").addEventListener("click", () => {
