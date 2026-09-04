@@ -26,10 +26,10 @@ Die App startet mit ein paar Beispiel-Konten (Sparkonto, Auto-Versicherung,
 Urlaub, Party – umbenennbar/löschbar im Tab "Konten"), aber **ohne** Beispiel-
 Buchungen. Trag als Erstes unter **⚙️ Einstellungen → Kontostand abgleichen**
 einmalig deinen echten, aktuellen Kontostand ein (z. B. aus deiner Sparkassen-
-App). Ab dann reicht es, laufende Einnahmen/Ausgaben ganz normal unter
-"Transaktionen" einzutragen. Falls du mal etwas zu buchen vergisst und der
-Kontostand nicht mehr stimmt, kannst du dort jederzeit neu abgleichen – die
-App bucht dann nur die Differenz nach.
+App). Ab dann reicht es, Einnahmen zu verteilen und Ausgaben einzutragen
+unter "💰 Einnahme & Ausgabe". Falls du mal etwas zu buchen vergisst und der
+Kontostand nicht mehr stimmt, kannst du unter Einstellungen jederzeit neu
+abgleichen – die App bucht dann nur die Differenz nach.
 
 ## Was die App kann
 
@@ -37,21 +37,25 @@ App bucht dann nur die Differenz nach.
   Auto-Reparaturen, Urlaub, Party. Jedes Konto hat eine Farbe, ein Emoji und
   optional ein **Sparziel** (Betrag + Datum, einmalig oder jährlich
   wiederkehrend wie die Auto-Versicherung/Steuer).
-- **Geld verteilen** – Taschengeld oder Lohn eintragen, die App verteilt es
-  automatisch nach den von dir festgelegten Prozentsätzen auf deine Konten
+- **Einnahme verteilen** – Taschengeld oder Lohn eintragen, die App verteilt
+  es automatisch nach den von dir festgelegten Prozentsätzen auf deine Konten
   (z. B. 60 % aufs Sparkonto). Der Rest landet automatisch im Girokonto.
+- **Ausgabe buchen** – einfach den Betrag eintragen (z. B. Kino, Essen), kein
+  Konto auswählen nötig: die App bucht ihn direkt vom frei verfügbaren
+  Girokonto ab. Die Konten sind schließlich kein echtes Konto-Hin-und-Her,
+  sondern nur die Aufteilung deines einen Gesamtguthabens.
 - **Vorausschau** – Der Spar-Start eines Ziels wird automatisch ab der ersten
   Einzahlung erkannt (manuell überschreibbar). Die App zeigt Tage bis zur
   Fälligkeit (z. B. 1.350 € Versicherung/Steuer am 1. September), Soll- vs.
-  Ist-Stand und ob du "auf Kurs" bist oder "Aufholbedarf" hast.
+  Ist-Stand, ob du "auf Kurs" bist oder "Aufholbedarf" hast, und über den
+  ℹ️-Button bei jedem Sparziel genau, wie viel du noch täglich/monatlich
+  einzahlen musst.
 - **Fällige Kosten bezahlen** – ein Klick bucht die Ausgabe vom passenden
-  Konto; bei jährlichen Kosten springt das Fälligkeitsdatum automatisch ein
-  Jahr weiter.
-- **Transaktionen** – manuell Einnahmen/Ausgaben buchen (z. B. Reifen,
-  Ölwechsel, Bremsen, Reparatur), filterbar je Konto.
+  Sparziel-Konto; bei jährlichen Kosten springt das Fälligkeitsdatum
+  automatisch ein Jahr weiter.
 - **Kontostand-Verlauf** als Diagramm, Fortschrittsbalken pro Sparziel.
 - **Einstellungen** – Kontostand abgleichen (Ersteinrichtung/Korrektur),
-  Backup-Export/Import als JSON, Versionsverlauf.
+  Backup-Export/Import als JSON, Versionsverlauf, komplettes Zurücksetzen.
 
 ## Technik
 
