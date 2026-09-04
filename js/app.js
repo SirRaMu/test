@@ -4,8 +4,16 @@
 const STORAGE_KEY = "finanzplaner_v1";
 const VERSION_KEY = "finanzplaner_last_seen_version";
 
-const APP_VERSION = "1.8.0";
+const APP_VERSION = "1.9.0";
 const CHANGELOG = [
+  {
+    version: "1.9.0",
+    date: "2026-09-04",
+    changes: [
+      "Tab \"Transaktionen\" entfernt – keine Konto-Auswahl mehr für einzelne Buchungen nötig. Stattdessen gibt es im Tab \"💰 Einnahme & Ausgabe\" nur noch zwei einfache Aktionen: eine Einnahme verteilen (wie bisher nach Prozentsätzen) oder eine Ausgabe eintragen, die automatisch vom frei verfügbaren Girokonto abgezogen wird.",
+      "Der Verlauf zeigt jetzt beide zusammen (Einnahmen und Ausgaben) und lässt sich bei Bedarf einzeln löschen.",
+    ],
+  },
   {
     version: "1.8.0",
     date: "2026-09-04",
@@ -303,7 +311,6 @@ function renderAll() {
   renderOverview();
   renderDistributeTab();
   renderAccountsTab();
-  renderTransactionsTab();
   renderSettingsTab();
   renderVersionHistory();
 }
@@ -608,6 +615,7 @@ function computeDistribution(amount) {
 
 function renderDistributeTab() {
   document.getElementById("distDate").value = todayISO();
+  document.getElementById("expenseDate").value = todayISO();
   renderDistHistory();
 }
 
@@ -712,25 +720,36 @@ function renderDistPreview(amount) {
 function renderDistHistory() {
   const box = document.getElementById("distHistory");
   const rows = state.transactions
-    .filter((tx) => tx.category === "Verteilung")
+    .filter((tx) => tx.category === "Verteilung" || tx.category === "Ausgabe")
     .slice()
     .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt)
-    .slice(0, 20);
+    .slice(0, 30);
   if (!rows.length) {
-    box.innerHTML = `<p class="empty-hint">Noch keine Verteilungen gebucht.</p>`;
+    box.innerHTML = `<p class="empty-hint">Noch keine Einnahmen oder Ausgaben gebucht.</p>`;
     return;
   }
-  box.innerHTML = `<div class="table-wrap"><table><thead><tr><th>Datum</th><th>Konto</th><th>Betrag</th><th>Notiz</th></tr></thead><tbody>${rows
+  box.innerHTML = `<div class="table-wrap"><table><thead><tr><th>Datum</th><th>Konto</th><th>Betrag</th><th>Notiz</th><th></th></tr></thead><tbody>${rows
     .map((tx) => {
       const acc = state.accounts.find((a) => a.id === tx.accountId);
+      const cls = tx.amount >= 0 ? "amount-pos" : "amount-neg";
       return `<tr>
         <td data-label="Datum">${fmtDate(tx.date)}</td>
         <td data-label="Konto">${acc ? acc.emoji + " " + acc.name : "?"}</td>
-        <td data-label="Betrag" class="amount-pos">${fmt.format(tx.amount)}</td>
+        <td data-label="Betrag" class="${cls}">${fmt.format(tx.amount)}</td>
         <td data-label="Notiz">${tx.note || ""}</td>
+        <td data-label=""><button class="icon-btn dist-delete" data-id="${tx.id}" title="Löschen">✕</button></td>
       </tr>`;
     })
     .join("")}</tbody></table></div>`;
+
+  box.querySelectorAll(".dist-delete").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      if (!confirm("Diese Buchung löschen?")) return;
+      state.transactions = state.transactions.filter((t) => t.id !== btn.dataset.id);
+      saveState();
+      renderAll();
+    })
+  );
 }
 
 /* ---- Konten ---- */
@@ -791,10 +810,6 @@ function renderAccountsTab() {
     const delBtn = card.querySelector(".btn-delete");
     if (delBtn) delBtn.addEventListener("click", () => deleteAccount(a.id));
   });
-
-  // refresh account selects elsewhere
-  fillAccountSelect(document.getElementById("txAccount"), false);
-  fillAccountSelect(document.getElementById("txFilter"), true);
 }
 
 function saveAccountCard(id, card) {
@@ -867,70 +882,6 @@ function addAccount() {
     card.focus();
     card.select();
   }
-}
-
-function fillAccountSelect(select, includeAll) {
-  const prev = select.value;
-  select.innerHTML = "";
-  if (includeAll) {
-    const opt = document.createElement("option");
-    opt.value = "";
-    opt.textContent = "Alle";
-    select.appendChild(opt);
-  }
-  state.accounts.forEach((a) => {
-    const opt = document.createElement("option");
-    opt.value = a.id;
-    opt.textContent = `${a.emoji} ${a.name}`;
-    select.appendChild(opt);
-  });
-  if ([...select.options].some((o) => o.value === prev)) select.value = prev;
-}
-
-/* ---- Transaktionen ---- */
-function renderTransactionsTab() {
-  fillAccountSelect(document.getElementById("txAccount"), false);
-  fillAccountSelect(document.getElementById("txFilter"), true);
-  if (!document.getElementById("txDate").value) document.getElementById("txDate").value = todayISO();
-  renderTxTable();
-}
-
-function renderTxTable() {
-  const filter = document.getElementById("txFilter").value;
-  const tbody = document.getElementById("txTableBody");
-  const rows = state.transactions
-    .filter((tx) => !filter || tx.accountId === filter)
-    .slice()
-    .sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt);
-
-  if (!rows.length) {
-    tbody.innerHTML = `<tr><td colspan="6" class="empty-hint">Keine Transaktionen.</td></tr>`;
-    return;
-  }
-
-  tbody.innerHTML = rows
-    .map((tx) => {
-      const acc = state.accounts.find((a) => a.id === tx.accountId);
-      const cls = tx.amount >= 0 ? "amount-pos" : "amount-neg";
-      return `<tr>
-        <td data-label="Datum">${fmtDate(tx.date)}</td>
-        <td data-label="Konto">${acc ? acc.emoji + " " + acc.name : "(gelöscht)"}</td>
-        <td data-label="Kategorie">${tx.category || ""}</td>
-        <td data-label="Notiz">${tx.note || ""}</td>
-        <td data-label="Betrag" class="${cls}">${fmt.format(tx.amount)}</td>
-        <td data-label=""><button class="icon-btn tx-delete" data-id="${tx.id}" title="Löschen">✕</button></td>
-      </tr>`;
-    })
-    .join("");
-
-  tbody.querySelectorAll(".tx-delete").forEach((btn) =>
-    btn.addEventListener("click", () => {
-      if (!confirm("Diese Buchung löschen?")) return;
-      state.transactions = state.transactions.filter((t) => t.id !== btn.dataset.id);
-      saveState();
-      renderAll();
-    })
-  );
 }
 
 /* ---- Versionsverlauf ---- */
@@ -1096,25 +1047,20 @@ function setupForms() {
     document.getElementById("reconcileAmount").focus();
   });
 
-  document.getElementById("txForm").addEventListener("submit", (e) => {
+  document.getElementById("expenseForm").addEventListener("submit", (e) => {
     e.preventDefault();
-    const accountId = document.getElementById("txAccount").value;
-    const type = document.getElementById("txType").value;
-    let amount = parseFloat(document.getElementById("txAmount").value);
-    const date = document.getElementById("txDate").value || todayISO();
-    const category = document.getElementById("txCategory").value.trim() || "Sonstiges";
-    const note = document.getElementById("txNote").value.trim();
-    if (!accountId || !amount || amount <= 0) return;
-    if (type === "out") amount = -amount;
-    state.transactions.push({ id: uid(), date, accountId, amount, category, note, createdAt: Date.now() });
+    const amount = parseFloat(document.getElementById("expenseAmount").value);
+    const date = document.getElementById("expenseDate").value || todayISO();
+    const note = document.getElementById("expenseNote").value.trim();
+    if (!amount || amount <= 0) return;
+    const def = getDefaultAccount();
+    state.transactions.push({ id: uid(), date, accountId: def.id, amount: -amount, category: "Ausgabe", note, createdAt: Date.now() });
     saveState();
-    document.getElementById("txForm").reset();
-    document.getElementById("txDate").value = todayISO();
+    document.getElementById("expenseForm").reset();
+    document.getElementById("expenseDate").value = todayISO();
     renderAll();
-    toast("Buchung gespeichert.");
+    toast(`${fmt.format(amount)} Ausgabe gebucht.`);
   });
-
-  document.getElementById("txFilter").addEventListener("change", renderTxTable);
 
   document.getElementById("exportBtn").addEventListener("click", () => {
     const blob = new Blob([JSON.stringify(state, null, 2)], { type: "application/json" });

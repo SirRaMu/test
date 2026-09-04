@@ -6,7 +6,7 @@
 <title>Mein Finanzplaner</title>
 <!-- ?v= muss bei jedem Release zusammen mit APP_VERSION in js/app.js erhöht werden,
      sonst liefert der Browser-Cache (max-age 10 Min. auf GitHub Pages) alte Dateien aus. -->
-<link rel="stylesheet" href="css/style.css?v=1.8.0">
+<link rel="stylesheet" href="css/style.css?v=1.9.0">
 </head>
 <body>
 
@@ -50,9 +50,8 @@
 
 <nav class="tabs" id="tabs">
   <button class="tab-btn active" data-tab="uebersicht">📊 Übersicht</button>
-  <button class="tab-btn" data-tab="verteilen">🔀 Geld verteilen</button>
+  <button class="tab-btn" data-tab="verteilen">💰 Einnahme &amp; Ausgabe</button>
   <button class="tab-btn" data-tab="konten">🏦 Konten</button>
-  <button class="tab-btn" data-tab="transaktionen">📒 Transaktionen</button>
   <button class="tab-btn" data-tab="einstellungen">⚙️ Einstellungen</button>
 </nav>
 
@@ -62,7 +61,7 @@
   <section id="tab-uebersicht" class="tab-panel active">
     <div id="onboardingHint" class="card onboarding-hint" hidden>
       <h2>👋 Los geht's!</h2>
-      <p class="hint">Trag als Erstes deinen aktuellen Kontostand ein, damit die App weiß, wie viel Geld du hast. Danach reicht es, Einnahmen und Ausgaben ganz normal unter "Transaktionen" einzutragen.</p>
+      <p class="hint">Trag als Erstes deinen aktuellen Kontostand ein, damit die App weiß, wie viel Geld du hast. Danach reicht es, Einnahmen zu verteilen und Ausgaben einzutragen unter "💰 Einnahme &amp; Ausgabe".</p>
       <button id="onboardingGoBtn" class="btn-primary">Jetzt Kontostand eintragen</button>
     </div>
 
@@ -87,7 +86,7 @@
   <!-- VERTEILEN -->
   <section id="tab-verteilen" class="tab-panel">
     <div class="card">
-      <h2>Geld verteilen</h2>
+      <h2>💰 Einnahme verteilen</h2>
       <p class="hint">Trag ein, wie viel Geld reinkommt (z.&nbsp;B. Taschengeld oder Lohn). Die Software verteilt es automatisch nach deinen Prozentsätzen auf deine Konten.</p>
       <form id="distributeForm" class="inline-form">
         <label>Betrag (€)
@@ -104,13 +103,30 @@
         <label>Datum
           <input type="date" id="distDate" required>
         </label>
-        <button type="submit" class="btn-primary">Vorschau &amp; Buchen</button>
+        <button type="submit" class="btn-primary">Verteilen</button>
       </form>
       <div id="distPreview" class="dist-preview"></div>
     </div>
 
     <div class="card">
-      <h2>Verteilungs-Verlauf</h2>
+      <h2>💸 Ausgabe buchen</h2>
+      <p class="hint">Hast du gerade Geld ausgegeben (z.&nbsp;B. Kino, Essen, Bus)? Trag den Betrag ein – er wird von deinem frei verfügbaren Girokonto abgezogen. Für größere geplante Kosten (z.&nbsp;B. Auto-Versicherung) nutz stattdessen den Button "Als bezahlt buchen" beim jeweiligen Sparziel auf der Übersicht.</p>
+      <form id="expenseForm" class="inline-form">
+        <label>Betrag (€)
+          <input type="number" id="expenseAmount" step="0.01" min="0.01" required placeholder="z.B. 10">
+        </label>
+        <label>Datum
+          <input type="date" id="expenseDate" required>
+        </label>
+        <label class="grow">Notiz
+          <input type="text" id="expenseNote" placeholder="optional, z.B. Kino">
+        </label>
+        <button type="submit" class="btn-primary">Buchen</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h2>Verlauf</h2>
       <div id="distHistory"></div>
     </div>
   </section>
@@ -126,68 +142,11 @@
     </div>
   </section>
 
-  <!-- TRANSAKTIONEN -->
-  <section id="tab-transaktionen" class="tab-panel">
-    <div class="card">
-      <h2>Neue Buchung</h2>
-      <form id="txForm" class="inline-form">
-        <label>Konto
-          <select id="txAccount"></select>
-        </label>
-        <label>Typ
-          <select id="txType">
-            <option value="in">Einnahme (+)</option>
-            <option value="out">Ausgabe (-)</option>
-          </select>
-        </label>
-        <label>Betrag (€)
-          <input type="number" id="txAmount" step="0.01" min="0.01" required>
-        </label>
-        <label>Datum
-          <input type="date" id="txDate" required>
-        </label>
-        <label>Kategorie
-          <input type="text" id="txCategory" list="categoryList" placeholder="z.B. Reparatur">
-          <datalist id="categoryList">
-            <option>Taschengeld</option>
-            <option>Job / Lohn</option>
-            <option>Reifen</option>
-            <option>Ölwechsel</option>
-            <option>Bremsen</option>
-            <option>Reparatur</option>
-            <option>Urlaub</option>
-            <option>Party</option>
-            <option>Sonstiges</option>
-          </datalist>
-        </label>
-        <label class="grow">Notiz
-          <input type="text" id="txNote" placeholder="optional">
-        </label>
-        <button type="submit" class="btn-primary">Buchen</button>
-      </form>
-    </div>
-
-    <div class="card">
-      <h2>Alle Transaktionen</h2>
-      <label class="filter-label">Konto filtern:
-        <select id="txFilter"><option value="">Alle</option></select>
-      </label>
-      <div class="table-wrap">
-        <table id="txTable">
-          <thead>
-            <tr><th>Datum</th><th>Konto</th><th>Kategorie</th><th>Notiz</th><th>Betrag</th><th></th></tr>
-          </thead>
-          <tbody id="txTableBody"></tbody>
-        </table>
-      </div>
-    </div>
-  </section>
-
   <!-- EINSTELLUNGEN -->
   <section id="tab-einstellungen" class="tab-panel">
     <div class="card">
       <h2>Kontostand abgleichen</h2>
-      <p class="hint">Für die <strong>Ersteinrichtung</strong>: Schau in deiner Banking-App (z.&nbsp;B. Sparkasse) nach, wie viel wirklich auf dem Konto ist, und trag den Betrag hier ein. Danach reicht es im Alltag, Einnahmen und Ausgaben ganz normal unter "Transaktionen" einzutragen.</p>
+      <p class="hint">Für die <strong>Ersteinrichtung</strong>: Schau in deiner Banking-App (z.&nbsp;B. Sparkasse) nach, wie viel wirklich auf dem Konto ist, und trag den Betrag hier ein. Danach reicht es im Alltag, Einnahmen zu verteilen und Ausgaben einzutragen unter "💰 Einnahme &amp; Ausgabe".</p>
       <p class="hint">Falls du mal vergessen hast, etwas einzutragen und der Kontostand nicht mehr stimmt: hier jederzeit neu abgleichen. Die App vergleicht deine Eingabe mit dem hier erfassten Stand und bucht nur die <strong>Differenz</strong> nach: Ist mehr Geld da, wird der neue Teil nach deinen Verteil-Prozentsätzen auf die Konten gebucht. Ist weniger Geld da, wird die Differenz als nicht einzeln erfasste Ausgabe vom Girokonto (frei verfügbar) abgezogen.</p>
       <p class="hint">Aktuell im Planer erfasst: <strong id="trackedTotalHint">0,00 €</strong> · Letzter Abgleich: <strong id="lastReconcileHint">noch nie</strong></p>
       <form id="reconcileForm" class="inline-form">
@@ -229,6 +188,6 @@
 
 <div id="toast" class="toast"></div>
 
-<script src="js/app.js?v=1.8.0"></script>
+<script src="js/app.js?v=1.9.0"></script>
 </body>
 </html>
