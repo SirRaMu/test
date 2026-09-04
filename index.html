@@ -12,7 +12,7 @@
   <div class="brand">
     <span class="brand-emoji">💶</span>
     <div>
-      <h1>Mein Finanzplaner</h1>
+      <h1>Mein Finanzplaner <span class="version-tag" id="versionTag">v0.0.0</span></h1>
       <p class="subtitle">Konten, Sparziele &amp; Vorausschau</p>
     </div>
   </div>
@@ -21,6 +21,14 @@
     <span class="value" id="totalBalance">0,00&nbsp;€</span>
   </div>
 </header>
+
+<div id="updateModalOverlay" class="modal-overlay" hidden>
+  <div class="modal-box">
+    <h2>🆕 Was ist neu?</h2>
+    <div id="updateModalBody"></div>
+    <button id="updateModalClose" class="btn-primary">Verstanden</button>
+  </div>
+</div>
 
 <nav class="tabs" id="tabs">
   <button class="tab-btn active" data-tab="uebersicht">📊 Übersicht</button>
@@ -55,8 +63,24 @@
   <!-- VERTEILEN -->
   <section id="tab-verteilen" class="tab-panel">
     <div class="card">
-      <h2>Geld verteilen</h2>
-      <p class="hint">Trag ein, wie viel Geld reinkommt (z.&nbsp;B. Taschengeld oder Lohn). Die Software verteilt es automatisch nach deinen Prozentsätzen auf deine Konten.</p>
+      <h2>Kontostand abgleichen <span class="hint-badge">empfohlen</span></h2>
+      <p class="hint">Schau in deiner Banking-App (z.&nbsp;B. Sparkasse) nach, wie viel wirklich auf dem Konto ist, und trag den Betrag hier ein. Die Software vergleicht ihn mit dem hier erfassten Stand und verteilt nur die <strong>Differenz</strong> automatisch: Ist mehr Geld da als erfasst, wird der neue Teil nach deinen Prozentsätzen auf die Konten verteilt. Ist weniger Geld da, wird die Differenz vom Girokonto (frei verfügbar) abgezogen – als nicht einzeln erfasste Ausgabe. Bereits gebuchte Ausgaben trägst du besser einzeln unter "Transaktionen" ein.</p>
+      <p class="hint">Aktuell im Planer erfasst: <strong id="trackedTotalHint">0,00 €</strong> · Letzter Abgleich: <strong id="lastReconcileHint">noch nie</strong></p>
+      <form id="reconcileForm" class="inline-form">
+        <label>Kontostand laut Bank (€)
+          <input type="number" id="reconcileAmount" step="0.01" min="0" required placeholder="z.B. 542.30">
+        </label>
+        <label>Datum
+          <input type="date" id="reconcileDate" required>
+        </label>
+        <button type="submit" class="btn-primary">Abgleichen</button>
+      </form>
+      <div id="reconcilePreview" class="dist-preview"></div>
+    </div>
+
+    <div class="card">
+      <h2>Geld manuell verteilen</h2>
+      <p class="hint">Alternativ: einen bestimmten Betrag (z.&nbsp;B. Bargeld-Taschengeld) direkt verteilen, ohne über den Kontostand-Abgleich zu gehen.</p>
       <form id="distributeForm" class="inline-form">
         <label>Betrag (€)
           <input type="number" id="distAmount" step="0.01" min="0.01" required placeholder="z.B. 150">
@@ -163,6 +187,11 @@
         </label>
         <button id="resetBtn" class="btn-danger">🗑️ Alles zurücksetzen</button>
       </div>
+    </div>
+
+    <div class="card">
+      <h2>Versionsverlauf</h2>
+      <div id="versionHistory" class="version-history"></div>
     </div>
   </section>
 
