@@ -20,6 +20,17 @@ python3 serve.py
 Voraussetzung: Python 3 (ist auf den meisten Rechnern schon installiert). Es
 wird sonst nichts benötigt – kein `npm install`, keine Internetverbindung.
 
+## Erste Schritte
+
+Die App startet mit ein paar Beispiel-Konten (Sparkonto, Auto-Versicherung,
+Urlaub, Party – umbenennbar/löschbar im Tab "Konten"), aber **ohne** Beispiel-
+Buchungen. Trag als Erstes unter **⚙️ Einstellungen → Kontostand abgleichen**
+einmalig deinen echten, aktuellen Kontostand ein (z. B. aus deiner Sparkassen-
+App). Ab dann reicht es, laufende Einnahmen/Ausgaben ganz normal unter
+"Transaktionen" einzutragen. Falls du mal etwas zu buchen vergisst und der
+Kontostand nicht mehr stimmt, kannst du dort jederzeit neu abgleichen – die
+App bucht dann nur die Differenz nach.
+
 ## Was die App kann
 
 - **Konten anlegen** – beliebig viele, z. B. Sparkonto, Auto-Versicherung,
@@ -29,21 +40,18 @@ wird sonst nichts benötigt – kein `npm install`, keine Internetverbindung.
 - **Geld verteilen** – Taschengeld oder Lohn eintragen, die App verteilt es
   automatisch nach den von dir festgelegten Prozentsätzen auf deine Konten
   (z. B. 60 % aufs Sparkonto). Der Rest landet automatisch im Girokonto.
-- **Vorausschau** – Übersicht, wie viele Tage bis zur nächsten fälligen Kosten
-  (z. B. 1.350 € Versicherung/Steuer am 1. September) verbleiben, wie viel
-  schon zurückgelegt wurde und ob du "auf Kurs" bist oder "Aufholbedarf"
-  hast (Vergleich: nötige monatliche Sparrate vs. dein bisheriger Schnitt).
+- **Vorausschau** – Der Spar-Start eines Ziels wird automatisch ab der ersten
+  Einzahlung erkannt (manuell überschreibbar). Die App zeigt Tage bis zur
+  Fälligkeit (z. B. 1.350 € Versicherung/Steuer am 1. September), Soll- vs.
+  Ist-Stand und ob du "auf Kurs" bist oder "Aufholbedarf" hast.
 - **Fällige Kosten bezahlen** – ein Klick bucht die Ausgabe vom passenden
   Konto; bei jährlichen Kosten springt das Fälligkeitsdatum automatisch ein
   Jahr weiter.
 - **Transaktionen** – manuell Einnahmen/Ausgaben buchen (z. B. Reifen,
   Ölwechsel, Bremsen, Reparatur), filterbar je Konto.
 - **Kontostand-Verlauf** als Diagramm, Fortschrittsbalken pro Sparziel.
-- **Backup** – Export/Import als JSON-Datei, falls du den Browser wechselst
-  oder ein Backup willst.
-
-Die App startet beim ersten Mal mit ein paar Beispiel-Konten/-Buchungen, die
-du jederzeit umbenennen, löschen oder ergänzen kannst (Tab "Konten").
+- **Einstellungen** – Kontostand abgleichen (Ersteinrichtung/Korrektur),
+  Backup-Export/Import als JSON, Versionsverlauf.
 
 ## Technik
 

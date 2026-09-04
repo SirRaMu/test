@@ -35,13 +35,19 @@
   <button class="tab-btn" data-tab="verteilen">🔀 Geld verteilen</button>
   <button class="tab-btn" data-tab="konten">🏦 Konten</button>
   <button class="tab-btn" data-tab="transaktionen">📒 Transaktionen</button>
-  <button class="tab-btn" data-tab="backup">💾 Backup</button>
+  <button class="tab-btn" data-tab="einstellungen">⚙️ Einstellungen</button>
 </nav>
 
 <main id="app">
 
   <!-- ÜBERSICHT -->
   <section id="tab-uebersicht" class="tab-panel active">
+    <div id="onboardingHint" class="card onboarding-hint" hidden>
+      <h2>👋 Los geht's!</h2>
+      <p class="hint">Trag als Erstes deinen aktuellen Kontostand ein, damit die App weiß, wie viel Geld du hast. Danach reicht es, Einnahmen und Ausgaben ganz normal unter "Transaktionen" einzutragen.</p>
+      <button id="onboardingGoBtn" class="btn-primary">Jetzt Kontostand eintragen</button>
+    </div>
+
     <div class="summary-row" id="summaryRow"></div>
 
     <div class="card">
@@ -63,24 +69,8 @@
   <!-- VERTEILEN -->
   <section id="tab-verteilen" class="tab-panel">
     <div class="card">
-      <h2>Kontostand abgleichen <span class="hint-badge">empfohlen</span></h2>
-      <p class="hint">Schau in deiner Banking-App (z.&nbsp;B. Sparkasse) nach, wie viel wirklich auf dem Konto ist, und trag den Betrag hier ein. Die Software vergleicht ihn mit dem hier erfassten Stand und verteilt nur die <strong>Differenz</strong> automatisch: Ist mehr Geld da als erfasst, wird der neue Teil nach deinen Prozentsätzen auf die Konten verteilt. Ist weniger Geld da, wird die Differenz vom Girokonto (frei verfügbar) abgezogen – als nicht einzeln erfasste Ausgabe. Bereits gebuchte Ausgaben trägst du besser einzeln unter "Transaktionen" ein.</p>
-      <p class="hint">Aktuell im Planer erfasst: <strong id="trackedTotalHint">0,00 €</strong> · Letzter Abgleich: <strong id="lastReconcileHint">noch nie</strong></p>
-      <form id="reconcileForm" class="inline-form">
-        <label>Kontostand laut Bank (€)
-          <input type="number" id="reconcileAmount" step="0.01" min="0" required placeholder="z.B. 542.30">
-        </label>
-        <label>Datum
-          <input type="date" id="reconcileDate" required>
-        </label>
-        <button type="submit" class="btn-primary">Abgleichen</button>
-      </form>
-      <div id="reconcilePreview" class="dist-preview"></div>
-    </div>
-
-    <div class="card">
-      <h2>Geld manuell verteilen</h2>
-      <p class="hint">Alternativ: einen bestimmten Betrag (z.&nbsp;B. Bargeld-Taschengeld) direkt verteilen, ohne über den Kontostand-Abgleich zu gehen.</p>
+      <h2>Geld verteilen</h2>
+      <p class="hint">Trag ein, wie viel Geld reinkommt (z.&nbsp;B. Taschengeld oder Lohn). Die Software verteilt es automatisch nach deinen Prozentsätzen auf deine Konten.</p>
       <form id="distributeForm" class="inline-form">
         <label>Betrag (€)
           <input type="number" id="distAmount" step="0.01" min="0.01" required placeholder="z.B. 150">
@@ -175,8 +165,25 @@
     </div>
   </section>
 
-  <!-- BACKUP -->
-  <section id="tab-backup" class="tab-panel">
+  <!-- EINSTELLUNGEN -->
+  <section id="tab-einstellungen" class="tab-panel">
+    <div class="card">
+      <h2>Kontostand abgleichen</h2>
+      <p class="hint">Für die <strong>Ersteinrichtung</strong>: Schau in deiner Banking-App (z.&nbsp;B. Sparkasse) nach, wie viel wirklich auf dem Konto ist, und trag den Betrag hier ein. Danach reicht es im Alltag, Einnahmen und Ausgaben ganz normal unter "Transaktionen" einzutragen.</p>
+      <p class="hint">Falls du mal vergessen hast, etwas einzutragen und der Kontostand nicht mehr stimmt: hier jederzeit neu abgleichen. Die App vergleicht deine Eingabe mit dem hier erfassten Stand und bucht nur die <strong>Differenz</strong> nach: Ist mehr Geld da, wird der neue Teil nach deinen Verteil-Prozentsätzen auf die Konten gebucht. Ist weniger Geld da, wird die Differenz als nicht einzeln erfasste Ausgabe vom Girokonto (frei verfügbar) abgezogen.</p>
+      <p class="hint">Aktuell im Planer erfasst: <strong id="trackedTotalHint">0,00 €</strong> · Letzter Abgleich: <strong id="lastReconcileHint">noch nie</strong></p>
+      <form id="reconcileForm" class="inline-form">
+        <label>Kontostand laut Bank (€)
+          <input type="number" id="reconcileAmount" step="0.01" min="0" required placeholder="z.B. 542.30">
+        </label>
+        <label>Datum
+          <input type="date" id="reconcileDate" required>
+        </label>
+        <button type="submit" class="btn-primary">Abgleichen</button>
+      </form>
+      <div id="reconcilePreview" class="dist-preview"></div>
+    </div>
+
     <div class="card">
       <h2>Backup</h2>
       <p class="hint">Alle Daten liegen nur in deinem Browser (localStorage). Exportiere regelmäßig ein Backup, damit nichts verloren geht.</p>

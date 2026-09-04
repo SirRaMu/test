@@ -4,8 +4,16 @@
 const STORAGE_KEY = "finanzplaner_v1";
 const VERSION_KEY = "finanzplaner_last_seen_version";
 
-const APP_VERSION = "1.3.0";
+const APP_VERSION = "1.4.0";
 const CHANGELOG = [
+  {
+    version: "1.4.0",
+    date: "2026-09-04",
+    changes: [
+      "Keine Beispiel-Buchungen mehr beim ersten Start: die App startet leer und führt dich direkt zum einmaligen Eintragen deines echten Kontostands.",
+      "\"Kontostand abgleichen\" ist jetzt unter ⚙️ Einstellungen zu finden – für die Ersteinrichtung und für den Fall, dass du mal vergessen hast, etwas einzutragen. Im Alltag reichen normale Einnahmen/Ausgaben unter \"Transaktionen\".",
+    ],
+  },
   {
     version: "1.3.0",
     date: "2026-09-04",
@@ -62,7 +70,6 @@ let state = loadState();
 
 function seedState() {
   const t = todayISO();
-  const monthAgo = shiftDays(t, -30);
   const nextSept = nextOccurrence("09-01");
   const urlaubDate = shiftDays(t, 270);
   return {
@@ -74,14 +81,9 @@ function seedState() {
       { id: "urlaub", name: "Urlaub", emoji: "✈️", color: "#0284c7", isDefault: false, distributionPercent: 10, goal: { amount: 600, date: urlaubDate, recurrence: "once", startDate: null } },
       { id: "party", name: "Party & Spaß", emoji: "🎉", color: "#9333ea", isDefault: false, distributionPercent: 5, goal: { amount: 150, date: null, recurrence: "none", startDate: null } },
     ],
-    transactions: [
-      { id: uid(), date: monthAgo, accountId: "girokonto", amount: 35, category: "Startguthaben", note: "Beispieldaten", createdAt: Date.now() },
-      { id: uid(), date: monthAgo, accountId: "sparkonto", amount: 300, category: "Startguthaben", note: "Beispieldaten", createdAt: Date.now() },
-      { id: uid(), date: monthAgo, accountId: "auto-versicherung", amount: 240, category: "Startguthaben", note: "Beispieldaten", createdAt: Date.now() },
-      { id: uid(), date: monthAgo, accountId: "auto-reparatur", amount: 40, category: "Startguthaben", note: "Beispieldaten", createdAt: Date.now() },
-      { id: uid(), date: monthAgo, accountId: "urlaub", amount: 60, category: "Startguthaben", note: "Beispieldaten", createdAt: Date.now() },
-      { id: uid(), date: monthAgo, accountId: "party", amount: 20, category: "Startguthaben", note: "Beispieldaten", createdAt: Date.now() },
-    ],
+    // Bewusst leer: der Nutzer trägt seinen echten Kontostand einmalig über
+    // "Einstellungen → Kontostand abgleichen" ein, statt mit Beispiel-Buchungen zu starten.
+    transactions: [],
   };
 }
 
@@ -259,6 +261,7 @@ function renderAll() {
   renderDistributeTab();
   renderAccountsTab();
   renderTransactionsTab();
+  renderSettingsTab();
   renderVersionHistory();
 }
 
@@ -268,6 +271,8 @@ function renderHeader() {
 
 /* ---- Übersicht ---- */
 function renderOverview() {
+  document.getElementById("onboardingHint").hidden = state.transactions.length > 0;
+
   const total = getTotalBalance();
   const goalsWithDate = state.accounts.filter((a) => a.goal && a.goal.date);
   const soonest = goalsWithDate
@@ -518,6 +523,10 @@ function computeDistribution(amount) {
 
 function renderDistributeTab() {
   document.getElementById("distDate").value = todayISO();
+  renderDistHistory();
+}
+
+function renderSettingsTab() {
   if (!document.getElementById("reconcileDate").value) {
     document.getElementById("reconcileDate").value = todayISO();
   }
@@ -528,7 +537,6 @@ function renderDistributeTab() {
     .sort()
     .pop();
   document.getElementById("lastReconcileHint").textContent = lastReconcile ? fmtDate(lastReconcile) : "noch nie";
-  renderDistHistory();
 }
 
 /* ---- Kontostand abgleichen ---- */
@@ -900,14 +908,14 @@ function toast(msg) {
   toast._t = setTimeout(() => el.classList.remove("show"), 2200);
 }
 
+function switchTab(name) {
+  document.querySelectorAll(".tab-btn").forEach((b) => b.classList.toggle("active", b.dataset.tab === name));
+  document.querySelectorAll(".tab-panel").forEach((p) => p.classList.toggle("active", p.id === "tab-" + name));
+}
+
 function setupTabs() {
   document.querySelectorAll(".tab-btn").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      document.querySelectorAll(".tab-btn").forEach((b) => b.classList.remove("active"));
-      document.querySelectorAll(".tab-panel").forEach((p) => p.classList.remove("active"));
-      btn.classList.add("active");
-      document.getElementById("tab-" + btn.dataset.tab).classList.add("active");
-    });
+    btn.addEventListener("click", () => switchTab(btn.dataset.tab));
   });
 }
 
@@ -957,6 +965,11 @@ function setupForms() {
   });
 
   document.getElementById("addAccountBtn").addEventListener("click", addAccount);
+
+  document.getElementById("onboardingGoBtn").addEventListener("click", () => {
+    switchTab("einstellungen");
+    document.getElementById("reconcileAmount").focus();
+  });
 
   document.getElementById("txForm").addEventListener("submit", (e) => {
     e.preventDefault();
