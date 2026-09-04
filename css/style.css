@@ -147,6 +147,21 @@ main{max-width:1100px;margin:0 auto;padding:20px;}
 .badge.bad{background:#fee2e2;color:#b91c1c;}
 .badge.done{background:#dbeafe;color:#1d4ed8;}
 
+.acc-badge-row{display:flex;align-items:center;justify-content:space-between;gap:8px;}
+.acc-badge-row .icon-btn{font-size:1.05rem;padding:2px;}
+.acc-badge-row .icon-btn:hover{color:var(--accent);}
+
+.goal-info-rates{display:flex;gap:12px;margin:12px 0;}
+.goal-info-rate{
+  flex:1;
+  background:#eef1f6;
+  border-radius:10px;
+  padding:12px;
+  text-align:center;
+}
+.goal-info-rate .num{display:block;font-size:1.15rem;font-weight:700;color:var(--text);}
+.goal-info-rate .lbl{font-size:.75rem;color:var(--muted);}
+
 .upcoming-list{display:flex;flex-direction:column;gap:10px;}
 .upcoming-item{
   display:flex;
