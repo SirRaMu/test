@@ -4,8 +4,17 @@
 const STORAGE_KEY = "finanzplaner_v1";
 const VERSION_KEY = "finanzplaner_last_seen_version";
 
-const APP_VERSION = "1.10.0";
+const APP_VERSION = "1.11.0";
 const CHANGELOG = [
+  {
+    version: "1.11.0",
+    date: "2026-09-04",
+    changes: [
+      "Fix: \"Ausgabe buchen\" ohne gezielte Kontoauswahl zog bisher immer alles vom Girokonto ab. Jetzt ist das Verhalten symmetrisch zu \"Einnahme verteilen\": Standard ist \"Alle Konten (anteilig abziehen)\" – die Ausgabe wird nach denselben Prozentsätzen von allen Konten abgezogen. Gezieltes Abziehen von nur einem Konto bleibt weiterhin über die Auswahl möglich.",
+      "Neue Live-Vorschau bei \"Ausgabe buchen\", die genau zeigt, was von welchem Konto abgezogen wird, bevor man bucht.",
+      "Aus Konsistenzgründen zieht auch ein negativer Kontostand-Abgleich (nicht einzeln erfasste Ausgaben) jetzt anteilig von allen Konten ab statt nur vom Girokonto.",
+    ],
+  },
   {
     version: "1.10.0",
     date: "2026-09-04",
@@ -648,7 +657,7 @@ function renderDistributeTab() {
   document.getElementById("distDate").value = todayISO();
   document.getElementById("expenseDate").value = todayISO();
   fillTargetSelect(document.getElementById("distTarget"), "🔀 Alle Konten (nach Prozentsätzen verteilen)");
-  fillTargetSelect(document.getElementById("expenseTarget"));
+  fillTargetSelect(document.getElementById("expenseTarget"), "🔀 Alle Konten (anteilig abziehen)");
   renderDistHistory();
 }
 
@@ -690,9 +699,15 @@ function renderReconcilePreview(newTotal) {
         )
         .join("");
   } else {
-    const def = getDefaultAccount();
-    box.innerHTML = `<div class="dist-row"><span>Nicht einzeln erfasste Ausgaben</span><span>${fmt.format(diff)}</span></div>
-      <div class="dist-row"><span>Wird abgezogen von: ${def.emoji} ${def.name}</span><span>${fmt.format(diff)}</span></div>`;
+    const rows = computeDistribution(-diff);
+    box.innerHTML =
+      `<div class="dist-row"><span>Nicht einzeln erfasste Ausgaben</span><span>${fmt.format(diff)}</span></div>` +
+      rows
+        .map(
+          (r) =>
+            `<div class="dist-row"><span>${r.account.emoji} ${r.account.name} (${r.pct.toFixed(0)}%)</span><span>${fmt.format(-r.amount)}</span></div>`
+        )
+        .join("");
   }
 }
 
@@ -718,15 +733,18 @@ function reconcileBalance(newTotal, date) {
       });
     });
   } else {
-    const def = getDefaultAccount();
-    state.transactions.push({
-      id: uid(),
-      date,
-      accountId: def.id,
-      amount: diff,
-      category: "Kontostand-Abgleich",
-      note: "Nicht einzeln erfasste Ausgaben laut Bank-Abgleich",
-      createdAt: Date.now(),
+    const rows = computeDistribution(-diff);
+    rows.forEach((r) => {
+      if (r.amount <= 0) return;
+      state.transactions.push({
+        id: uid(),
+        date,
+        accountId: r.account.id,
+        amount: -r.amount,
+        category: "Kontostand-Abgleich",
+        note: "Nicht einzeln erfasste Ausgaben laut Bank-Abgleich",
+        createdAt: Date.now(),
+      });
     });
   }
   saveState();
@@ -758,6 +776,32 @@ function renderDistPreview(amount) {
           `<div class="dist-row"><span>${r.account.emoji} ${r.account.name} (${r.pct.toFixed(0)}%)</span><span>${fmt.format(r.amount)}</span></div>`
       )
       .join("") + `<div class="dist-row"><span>Gesamt</span><span>${fmt.format(amount)}</span></div>`;
+}
+
+function renderExpensePreview(amount) {
+  const box = document.getElementById("expensePreview");
+  if (!amount || amount <= 0) {
+    box.innerHTML = "";
+    return;
+  }
+  const targetId = document.getElementById("expenseTarget").value;
+  if (targetId) {
+    const target = state.accounts.find((a) => a.id === targetId);
+    if (!target) {
+      box.innerHTML = "";
+      return;
+    }
+    box.innerHTML = `<div class="dist-row"><span>${target.emoji} ${target.name} (100%)</span><span>${fmt.format(-amount)}</span></div>`;
+    return;
+  }
+  const rows = computeDistribution(amount);
+  box.innerHTML =
+    rows
+      .map(
+        (r) =>
+          `<div class="dist-row"><span>${r.account.emoji} ${r.account.name} (${r.pct.toFixed(0)}%)</span><span>${fmt.format(-r.amount)}</span></div>`
+      )
+      .join("") + `<div class="dist-row"><span>Gesamt</span><span>${fmt.format(-amount)}</span></div>`;
 }
 
 function renderDistHistory() {
@@ -1110,20 +1154,39 @@ function setupForms() {
     document.getElementById("reconcileAmount").focus();
   });
 
+  document.getElementById("expenseAmount").addEventListener("input", (e) => {
+    renderExpensePreview(parseFloat(e.target.value));
+  });
+  document.getElementById("expenseTarget").addEventListener("change", () => {
+    renderExpensePreview(parseFloat(document.getElementById("expenseAmount").value));
+  });
+
   document.getElementById("expenseForm").addEventListener("submit", (e) => {
     e.preventDefault();
     const amount = parseFloat(document.getElementById("expenseAmount").value);
     const date = document.getElementById("expenseDate").value || todayISO();
     const note = document.getElementById("expenseNote").value.trim();
     const targetId = document.getElementById("expenseTarget").value;
-    const target = state.accounts.find((a) => a.id === targetId) || getDefaultAccount();
     if (!amount || amount <= 0) return;
-    state.transactions.push({ id: uid(), date, accountId: target.id, amount: -amount, category: "Ausgabe", note, createdAt: Date.now() });
+
+    if (targetId) {
+      const target = state.accounts.find((a) => a.id === targetId);
+      if (!target) return;
+      state.transactions.push({ id: uid(), date, accountId: target.id, amount: -amount, category: "Ausgabe", note, createdAt: Date.now() });
+      toast(`${fmt.format(amount)} von ${target.emoji} ${target.name} abgezogen.`);
+    } else {
+      const rows = computeDistribution(amount);
+      rows.forEach((r) => {
+        if (r.amount <= 0) return;
+        state.transactions.push({ id: uid(), date, accountId: r.account.id, amount: -r.amount, category: "Ausgabe", note, createdAt: Date.now() });
+      });
+      toast(`${fmt.format(amount)} anteilig abgezogen.`);
+    }
     saveState();
     document.getElementById("expenseForm").reset();
     document.getElementById("expenseDate").value = todayISO();
+    document.getElementById("expensePreview").innerHTML = "";
     renderAll();
-    toast(`${fmt.format(amount)} von ${target.emoji} ${target.name} abgezogen.`);
   });
 
   document.getElementById("exportBtn").addEventListener("click", () => {

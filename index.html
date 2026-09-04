@@ -6,7 +6,7 @@
 <title>Mein Finanzplaner</title>
 <!-- ?v= muss bei jedem Release zusammen mit APP_VERSION in js/app.js erhöht werden,
      sonst liefert der Browser-Cache (max-age 10 Min. auf GitHub Pages) alte Dateien aus. -->
-<link rel="stylesheet" href="css/style.css?v=1.10.0">
+<link rel="stylesheet" href="css/style.css?v=1.11.0">
 </head>
 <body>
 
@@ -113,7 +113,7 @@
 
     <div class="card">
       <h2>💸 Ausgabe buchen</h2>
-      <p class="hint">Hast du gerade Geld ausgegeben (z.&nbsp;B. Kino, Essen, Bus)? Standardmäßig wird das von deinem frei verfügbaren Girokonto abgezogen – du kannst aber auch ein anderes Konto wählen, z.&nbsp;B. um spontan 10&nbsp;€ von "Auto: Versicherung &amp; Steuer" abzuziehen. Für die reguläre Fällig-Zahlung eines Sparziels nutz stattdessen "Als bezahlt buchen" auf der Übersicht.</p>
+      <p class="hint">Hast du gerade Geld ausgegeben (z.&nbsp;B. Kino, Essen, Bus)? Standardmäßig wird das anteilig von allen Konten abgezogen (genau umgekehrt wie beim Verteilen einer Einnahme) – du kannst aber auch gezielt nur ein einzelnes Konto wählen, z.&nbsp;B. um spontan 10&nbsp;€ von "Auto: Versicherung &amp; Steuer" abzuziehen. Für die reguläre Fällig-Zahlung eines Sparziels nutz stattdessen "Als bezahlt buchen" auf der Übersicht.</p>
       <form id="expenseForm" class="inline-form">
         <label>Betrag (€)
           <input type="number" id="expenseAmount" step="0.01" min="0.01" required placeholder="z.B. 10">
@@ -129,6 +129,7 @@
         </label>
         <button type="submit" class="btn-primary">Buchen</button>
       </form>
+      <div id="expensePreview" class="dist-preview"></div>
     </div>
 
     <div class="card">
@@ -153,7 +154,7 @@
     <div class="card">
       <h2>Kontostand abgleichen</h2>
       <p class="hint">Für die <strong>Ersteinrichtung</strong>: Schau in deiner Banking-App (z.&nbsp;B. Sparkasse) nach, wie viel wirklich auf dem Konto ist, und trag den Betrag hier ein. Danach reicht es im Alltag, Einnahmen zu verteilen und Ausgaben einzutragen unter "💰 Einnahme &amp; Ausgabe".</p>
-      <p class="hint">Falls du mal vergessen hast, etwas einzutragen und der Kontostand nicht mehr stimmt: hier jederzeit neu abgleichen. Die App vergleicht deine Eingabe mit dem hier erfassten Stand und bucht nur die <strong>Differenz</strong> nach: Ist mehr Geld da, wird der neue Teil nach deinen Verteil-Prozentsätzen auf die Konten gebucht. Ist weniger Geld da, wird die Differenz als nicht einzeln erfasste Ausgabe vom Girokonto (frei verfügbar) abgezogen.</p>
+      <p class="hint">Falls du mal vergessen hast, etwas einzutragen und der Kontostand nicht mehr stimmt: hier jederzeit neu abgleichen. Die App vergleicht deine Eingabe mit dem hier erfassten Stand und bucht nur die <strong>Differenz</strong> nach: Ist mehr Geld da, wird der neue Teil nach deinen Verteil-Prozentsätzen auf die Konten gebucht. Ist weniger Geld da, wird die Differenz als nicht einzeln erfasste Ausgabe anteilig von allen Konten abgezogen.</p>
       <p class="hint">Aktuell im Planer erfasst: <strong id="trackedTotalHint">0,00 €</strong> · Letzter Abgleich: <strong id="lastReconcileHint">noch nie</strong></p>
       <form id="reconcileForm" class="inline-form">
         <label>Kontostand laut Bank (€)
@@ -194,6 +195,6 @@
 
 <div id="toast" class="toast"></div>
 
-<script src="js/app.js?v=1.10.0"></script>
+<script src="js/app.js?v=1.11.0"></script>
 </body>
 </html>
