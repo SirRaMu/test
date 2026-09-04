@@ -257,6 +257,9 @@ th{color:var(--muted);font-weight:600;font-size:.78rem;text-transform:uppercase;
 
 .backup-actions{display:flex;gap:12px;flex-wrap:wrap;}
 
+.danger-zone{border:1px solid #fecaca;}
+.danger-zone h2{color:#b91c1c;}
+
 .toast{
   position:fixed;
   bottom:24px;

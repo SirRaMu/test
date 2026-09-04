@@ -4,8 +4,15 @@
 const STORAGE_KEY = "finanzplaner_v1";
 const VERSION_KEY = "finanzplaner_last_seen_version";
 
-const APP_VERSION = "1.5.0";
+const APP_VERSION = "1.6.0";
 const CHANGELOG = [
+  {
+    version: "1.6.0",
+    date: "2026-09-04",
+    changes: [
+      "\"Alles zurücksetzen\" in den Einstellungen löscht jetzt wirklich ALLES (auch alle Konten, nicht nur Buchungen) und startet komplett leer wie bei der ersten Installation – vorher als eigener, klar markierter Gefahrenbereich mit deutlicherer Warnung.",
+    ],
+  },
   {
     version: "1.5.0",
     date: "2026-09-04",
@@ -90,6 +97,17 @@ function seedState() {
     ],
     // Bewusst leer: der Nutzer trägt seinen echten Kontostand einmalig über
     // "Einstellungen → Kontostand abgleichen" ein, statt mit Beispiel-Buchungen zu starten.
+    transactions: [],
+  };
+}
+
+// Wirklich leerer Zustand für "Alle Daten löschen": nur das eine nötige
+// Standardkonto, keine Beispiel-Konten, keine Buchungen.
+function emptyState() {
+  return {
+    accounts: [
+      { id: "girokonto", name: "Girokonto", emoji: "💳", color: "#64748b", isDefault: true, distributionPercent: 100, goal: null },
+    ],
     transactions: [],
   };
 }
@@ -1067,11 +1085,16 @@ function setupForms() {
   });
 
   document.getElementById("resetBtn").addEventListener("click", () => {
-    if (!confirm("Wirklich ALLE Daten löschen und mit Beispieldaten neu starten?")) return;
-    state = seedState();
+    const ok = confirm(
+      "Wirklich ALLE Daten unwiderruflich löschen?\n\nDas entfernt alle Konten, Sparziele und Buchungen und kann NICHT rückgängig gemacht werden. Erstell dir vorher lieber ein Backup (⬇️ Backup exportieren)."
+    );
+    if (!ok) return;
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(VERSION_KEY);
+    state = emptyState();
     saveState();
     renderAll();
-    toast("Zurückgesetzt.");
+    toast("Alle Daten gelöscht.");
   });
 
   document.getElementById("updateModalClose").addEventListener("click", closeUpdateModal);
