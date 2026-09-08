@@ -4,8 +4,15 @@
 const STORAGE_KEY = "finanzplaner_v1";
 const VERSION_KEY = "finanzplaner_last_seen_version";
 
-const APP_VERSION = "1.11.0";
+const APP_VERSION = "1.11.1";
 const CHANGELOG = [
+  {
+    version: "1.11.1",
+    date: "2026-09-08",
+    changes: [
+      "Fix: Ein eingetragenes Zieldatum bei einem Sparziel verschwand beim Speichern wieder, wenn \"Wiederholung\" auf \"Einmalig / offen\" stehen blieb. Die Auswahl springt jetzt automatisch auf \"Einmalig mit Datum\", sobald ein Zieldatum eingetragen wird.",
+    ],
+  },
   {
     version: "1.11.0",
     date: "2026-09-04",
@@ -886,12 +893,26 @@ function renderAccountsTab() {
     });
 
     const recurrenceSelect = card.querySelector(".f-goal-recurrence");
+    const dateInput = card.querySelector(".f-goal-date");
     const startWrap = card.querySelector(".f-goal-start-wrap");
     const updateStartVisibility = () => {
       startWrap.style.display = recurrenceSelect.value === "none" ? "none" : "";
     };
     updateStartVisibility();
     recurrenceSelect.addEventListener("change", updateStartVisibility);
+
+    // Ein eingetragenes Zieldatum macht sonst keinen Sinn bei "Einmalig / offen"
+    // (das würde beim Speichern sonst wieder verworfen) – also automatisch auf
+    // "Einmalig mit Datum" umstellen, sobald ein Datum eingetragen wird.
+    dateInput.addEventListener("change", () => {
+      if (dateInput.value && recurrenceSelect.value === "none") {
+        recurrenceSelect.value = "once";
+        updateStartVisibility();
+      } else if (!dateInput.value && recurrenceSelect.value === "once") {
+        recurrenceSelect.value = "none";
+        updateStartVisibility();
+      }
+    });
 
     card.querySelector(".btn-save").addEventListener("click", () => saveAccountCard(a.id, card));
     const delBtn = card.querySelector(".btn-delete");
@@ -914,11 +935,15 @@ function saveAccountCard(id, card) {
   if (hasGoal) {
     const amount = parseFloat(card.querySelector(".f-goal-amount").value);
     const date = card.querySelector(".f-goal-date").value || null;
-    const recurrence = card.querySelector(".f-goal-recurrence").value;
+    let recurrence = card.querySelector(".f-goal-recurrence").value;
     if (!amount || amount <= 0) {
       alert("Bitte einen gültigen Zielbetrag angeben.");
       return;
     }
+    // Ein eingetragenes Datum zählt auch dann, wenn "Wiederholung" versehentlich
+    // auf "Einmalig / offen" stehen geblieben ist – sonst würde das Datum hier
+    // sonst wieder verworfen werden.
+    if (date && recurrence === "none") recurrence = "once";
     const finalDate = recurrence === "none" ? null : date;
     const startDate = card.querySelector(".f-goal-start").value || null;
     a.goal = { amount, date: finalDate, recurrence, startDate: finalDate ? startDate : null };
