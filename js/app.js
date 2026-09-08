@@ -4,8 +4,15 @@
 const STORAGE_KEY = "finanzplaner_v1";
 const VERSION_KEY = "finanzplaner_last_seen_version";
 
-const APP_VERSION = "1.15.0";
+const APP_VERSION = "1.16.0";
 const CHANGELOG = [
+  {
+    version: "1.16.0",
+    date: "2026-09-08",
+    changes: [
+      "Neu unter Einstellungen: \"📲 Auf anderes Gerät übertragen\" – erzeugt einen Code mit all deinen Daten zum Kopieren (z.B. per WhatsApp/Mail an dich selbst), den du auf einem anderen Gerät einfügst und übernimmst. Praktisch für den Wechsel zwischen Handy, iPad und PC, ganz ohne eigenen Server.",
+    ],
+  },
   {
     version: "1.15.0",
     date: "2026-09-08",
@@ -152,6 +159,42 @@ const fmtDate = (iso) => {
 };
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+
+/* ---- Übertragungs-Code (Backup als Text statt Datei, z.B. per WhatsApp/Mail) ---- */
+const TRANSFER_PREFIX = "FPLAN1:";
+
+function toBase64Unicode(str) {
+  const bytes = new TextEncoder().encode(str);
+  let binary = "";
+  bytes.forEach((b) => (binary += String.fromCharCode(b)));
+  return btoa(binary);
+}
+function fromBase64Unicode(b64) {
+  const binary = atob(b64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return new TextDecoder().decode(bytes);
+}
+function generateTransferCode() {
+  return TRANSFER_PREFIX + toBase64Unicode(JSON.stringify(state));
+}
+// Wirft einen Error mit verständlicher Meldung, falls der Code ungültig ist.
+function decodeTransferCode(raw) {
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith(TRANSFER_PREFIX)) {
+    throw new Error("Das sieht nicht nach einem gültigen Finanzplaner-Code aus. Bitte den Code vollständig kopieren.");
+  }
+  let data;
+  try {
+    data = JSON.parse(fromBase64Unicode(trimmed.slice(TRANSFER_PREFIX.length)));
+  } catch (e) {
+    throw new Error("Code konnte nicht gelesen werden. Bitte prüfen, ob er vollständig eingefügt wurde.");
+  }
+  if (!data.accounts || !data.transactions) {
+    throw new Error("Ungültiges Datenformat im Code.");
+  }
+  return data;
+}
 
 /* ---------- State ---------- */
 let state = loadState();
@@ -1321,6 +1364,43 @@ function setupForms() {
     document.getElementById("expenseDate").value = todayISO();
     document.getElementById("expensePreview").innerHTML = "";
     renderAll();
+  });
+
+  document.getElementById("generateCodeBtn").addEventListener("click", () => {
+    const output = document.getElementById("transferCodeOutput");
+    output.value = generateTransferCode();
+    output.hidden = false;
+    document.getElementById("copyCodeBtn").hidden = false;
+    toast("Code erzeugt – jetzt kopieren und aufs andere Gerät schicken.");
+  });
+
+  document.getElementById("copyCodeBtn").addEventListener("click", async () => {
+    const output = document.getElementById("transferCodeOutput");
+    try {
+      await navigator.clipboard.writeText(output.value);
+      toast("Code kopiert.");
+    } catch (e) {
+      output.removeAttribute("hidden");
+      output.select();
+      document.execCommand("copy");
+      toast("Code kopiert.");
+    }
+  });
+
+  document.getElementById("importCodeBtn").addEventListener("click", () => {
+    const raw = document.getElementById("transferCodeInput").value;
+    if (!raw.trim()) return;
+    try {
+      const data = decodeTransferCode(raw);
+      if (!confirm("Aktuelle Daten mit diesem Code überschreiben?")) return;
+      state = data;
+      saveState();
+      document.getElementById("transferCodeInput").value = "";
+      renderAll();
+      toast("Daten übernommen.");
+    } catch (err) {
+      alert(err.message);
+    }
   });
 
   document.getElementById("exportBtn").addEventListener("click", () => {
