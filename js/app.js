@@ -4,8 +4,15 @@
 const STORAGE_KEY = "finanzplaner_v1";
 const VERSION_KEY = "finanzplaner_last_seen_version";
 
-const APP_VERSION = "1.12.0";
+const APP_VERSION = "1.13.0";
 const CHANGELOG = [
+  {
+    version: "1.13.0",
+    date: "2026-09-08",
+    changes: [
+      "Jetzt kann auch das Girokonto (Standardkonto) gelöscht werden, wenn man es nicht braucht. Ein anderes Konto (mit dem höchsten Verteil-Anteil) übernimmt automatisch die Rolle als neues Standardkonto. Nur das jeweils letzte verbleibende Konto lässt sich nicht löschen.",
+    ],
+  },
   {
     version: "1.12.0",
     date: "2026-09-08",
@@ -893,7 +900,7 @@ function renderAccountsTab() {
       <div class="card-actions">
         <span class="empty-hint">Kontostand: ${fmt.format(getBalance(a.id))}</span>
         <button class="btn-secondary btn-save">Speichern</button>
-        ${a.isDefault ? "" : `<button class="btn-danger btn-delete">Löschen</button>`}
+        ${state.accounts.length > 1 ? `<button class="btn-danger btn-delete">Löschen</button>` : ""}
       </div>
     `;
     list.appendChild(card);
@@ -968,15 +975,26 @@ function saveAccountCard(id, card) {
 function deleteAccount(id) {
   const a = state.accounts.find((x) => x.id === id);
   if (!a) return;
+  if (state.accounts.length <= 1) {
+    alert("Das letzte verbleibende Konto kann nicht gelöscht werden.");
+    return;
+  }
   const balance = getBalance(id);
+  const remainingAccounts = state.accounts.filter((x) => x.id !== id);
+  let newDefault = null;
+  if (a.isDefault) {
+    newDefault = remainingAccounts.reduce((best, acc) => (acc.distributionPercent > best.distributionPercent ? acc : best), remainingAccounts[0]);
+  }
+  const defaultNote = newDefault ? ` "${newDefault.emoji} ${newDefault.name}" wird dabei zum neuen Standardkonto (erhält künftig Restbeträge/Differenzen).` : "";
   const msg =
     balance !== 0
-      ? `"${a.name}" hat noch ${fmt.format(balance)}. Dieser Betrag wird anteilig nach den Verteil-Prozentsätzen auf die übrigen Konten ${balance > 0 ? "aufgeteilt" : "abgezogen"}. Konto wirklich löschen?`
-      : `Konto "${a.name}" wirklich löschen?`;
+      ? `"${a.name}" hat noch ${fmt.format(balance)}. Dieser Betrag wird anteilig nach den Verteil-Prozentsätzen auf die übrigen Konten ${balance > 0 ? "aufgeteilt" : "abgezogen"}.${defaultNote} Konto wirklich löschen?`
+      : `Konto "${a.name}" wirklich löschen?${defaultNote}`;
   if (!confirm(msg)) return;
 
+  if (newDefault) newDefault.isDefault = true;
+
   if (balance !== 0) {
-    const remainingAccounts = state.accounts.filter((x) => x.id !== id);
     const sign = balance > 0 ? 1 : -1;
     state.transactions.push({ id: uid(), date: todayISO(), accountId: id, amount: -balance, category: "Kontoauflösung", note: "Aufgeteilt auf übrige Konten", createdAt: Date.now() });
     const rows = computeDistribution(Math.abs(balance), remainingAccounts);
