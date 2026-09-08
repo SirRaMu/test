@@ -4,8 +4,15 @@
 const STORAGE_KEY = "finanzplaner_v1";
 const VERSION_KEY = "finanzplaner_last_seen_version";
 
-const APP_VERSION = "1.11.1";
+const APP_VERSION = "1.12.0";
 const CHANGELOG = [
+  {
+    version: "1.12.0",
+    date: "2026-09-08",
+    changes: [
+      "Beim Löschen eines Kontos wird das Restguthaben jetzt anteilig nach den Verteil-Prozentsätzen auf die übrigen Konten aufgeteilt statt komplett aufs Girokonto zu wandern. Bei einem Minus-Saldo wird entsprechend anteilig von den übrigen Konten abgezogen.",
+    ],
+  },
   {
     version: "1.11.1",
     date: "2026-09-08",
@@ -618,8 +625,11 @@ function drawBalanceChart() {
 }
 
 /* ---- Verteilen ---- */
-function computeDistribution(amount) {
-  const distAccounts = state.accounts.filter((a) => !a.isDefault && a.distributionPercent > 0);
+// accounts: optionale Liste, auf die verteilt werden soll (Standard: alle aktuellen
+// Konten). Wird z.B. beim Löschen eines Kontos genutzt, um nur auf die übrigen
+// Konten zu verteilen.
+function computeDistribution(amount, accounts = state.accounts) {
+  const distAccounts = accounts.filter((a) => !a.isDefault && a.distributionPercent > 0);
   const usedPct = distAccounts.reduce((s, a) => s + a.distributionPercent, 0);
   const cappedPct = Math.min(usedPct, 100);
   const scale = usedPct > 100 ? 100 / usedPct : 1;
@@ -631,7 +641,7 @@ function computeDistribution(amount) {
   }));
   const allocated = rows.reduce((s, r) => s + r.amount, 0);
   const remainder = Math.max(amount - allocated, 0);
-  const def = getDefaultAccount();
+  const def = accounts.find((a) => a.isDefault) || getDefaultAccount();
   rows.push({ account: def, pct: 100 - cappedPct, amount: remainder, isRemainder: true });
   return rows;
 }
@@ -961,14 +971,27 @@ function deleteAccount(id) {
   const balance = getBalance(id);
   const msg =
     balance !== 0
-      ? `"${a.name}" hat noch ${fmt.format(balance)}. Dieser Betrag wird auf "${getDefaultAccount().name}" übertragen. Konto wirklich löschen?`
+      ? `"${a.name}" hat noch ${fmt.format(balance)}. Dieser Betrag wird anteilig nach den Verteil-Prozentsätzen auf die übrigen Konten ${balance > 0 ? "aufgeteilt" : "abgezogen"}. Konto wirklich löschen?`
       : `Konto "${a.name}" wirklich löschen?`;
   if (!confirm(msg)) return;
 
   if (balance !== 0) {
-    const def = getDefaultAccount();
-    state.transactions.push({ id: uid(), date: todayISO(), accountId: id, amount: -balance, category: "Kontoauflösung", note: `Übertrag nach ${def.name}`, createdAt: Date.now() });
-    state.transactions.push({ id: uid(), date: todayISO(), accountId: def.id, amount: balance, category: "Kontoauflösung", note: `Übertrag von ${a.name}`, createdAt: Date.now() });
+    const remainingAccounts = state.accounts.filter((x) => x.id !== id);
+    const sign = balance > 0 ? 1 : -1;
+    state.transactions.push({ id: uid(), date: todayISO(), accountId: id, amount: -balance, category: "Kontoauflösung", note: "Aufgeteilt auf übrige Konten", createdAt: Date.now() });
+    const rows = computeDistribution(Math.abs(balance), remainingAccounts);
+    rows.forEach((r) => {
+      if (r.amount <= 0) return;
+      state.transactions.push({
+        id: uid(),
+        date: todayISO(),
+        accountId: r.account.id,
+        amount: sign * r.amount,
+        category: "Kontoauflösung",
+        note: `Anteil von ${a.name}`,
+        createdAt: Date.now(),
+      });
+    });
   }
   state.accounts = state.accounts.filter((x) => x.id !== id);
   saveState();
