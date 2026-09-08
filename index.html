@@ -6,7 +6,7 @@
 <title>Mein Finanzplaner</title>
 <!-- ?v= muss bei jedem Release zusammen mit APP_VERSION in js/app.js erhöht werden,
      sonst liefert der Browser-Cache (max-age 10 Min. auf GitHub Pages) alte Dateien aus. -->
-<link rel="stylesheet" href="css/style.css?v=1.13.0">
+<link rel="stylesheet" href="css/style.css?v=1.14.0">
 </head>
 <body>
 
@@ -45,6 +45,17 @@
     <h2 id="goalInfoTitle">ℹ️ Sparziel</h2>
     <div id="goalInfoBody"></div>
     <button id="goalInfoClose" class="btn-primary">Schließen</button>
+  </div>
+</div>
+
+<div id="deleteAccountModalOverlay" class="modal-overlay" hidden>
+  <div class="modal-box">
+    <h2>🗑️ Konto löschen</h2>
+    <div id="deleteAccountBody"></div>
+    <div class="modal-actions">
+      <button id="deleteAccountCancel" class="btn-secondary">Abbrechen</button>
+      <button id="deleteAccountConfirm" class="btn-danger">Konto löschen</button>
+    </div>
   </div>
 </div>
 
@@ -195,6 +206,6 @@
 
 <div id="toast" class="toast"></div>
 
-<script src="js/app.js?v=1.13.0"></script>
+<script src="js/app.js?v=1.14.0"></script>
 </body>
 </html>

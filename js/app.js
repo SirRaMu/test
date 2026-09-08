@@ -4,8 +4,15 @@
 const STORAGE_KEY = "finanzplaner_v1";
 const VERSION_KEY = "finanzplaner_last_seen_version";
 
-const APP_VERSION = "1.13.0";
+const APP_VERSION = "1.14.0";
 const CHANGELOG = [
+  {
+    version: "1.14.0",
+    date: "2026-09-08",
+    changes: [
+      "Beim Löschen des Standardkontos (z.B. Girokonto) öffnet sich jetzt ein Dialog, der erklärt, was ein Standardkonto macht (Rest bei Verteilung, Differenzen beim Kontostand-Abgleich), und dich das neue Standardkonto selbst auswählen lässt, statt es automatisch festzulegen.",
+    ],
+  },
   {
     version: "1.13.0",
     date: "2026-09-08",
@@ -933,7 +940,7 @@ function renderAccountsTab() {
 
     card.querySelector(".btn-save").addEventListener("click", () => saveAccountCard(a.id, card));
     const delBtn = card.querySelector(".btn-delete");
-    if (delBtn) delBtn.addEventListener("click", () => deleteAccount(a.id));
+    if (delBtn) delBtn.addEventListener("click", () => openDeleteAccountModal(a.id));
   });
 }
 
@@ -972,7 +979,7 @@ function saveAccountCard(id, card) {
   toast("Konto gespeichert.");
 }
 
-function deleteAccount(id) {
+function openDeleteAccountModal(id) {
   const a = state.accounts.find((x) => x.id === id);
   if (!a) return;
   if (state.accounts.length <= 1) {
@@ -981,18 +988,54 @@ function deleteAccount(id) {
   }
   const balance = getBalance(id);
   const remainingAccounts = state.accounts.filter((x) => x.id !== id);
-  let newDefault = null;
-  if (a.isDefault) {
-    newDefault = remainingAccounts.reduce((best, acc) => (acc.distributionPercent > best.distributionPercent ? acc : best), remainingAccounts[0]);
-  }
-  const defaultNote = newDefault ? ` "${newDefault.emoji} ${newDefault.name}" wird dabei zum neuen Standardkonto (erhält künftig Restbeträge/Differenzen).` : "";
-  const msg =
-    balance !== 0
-      ? `"${a.name}" hat noch ${fmt.format(balance)}. Dieser Betrag wird anteilig nach den Verteil-Prozentsätzen auf die übrigen Konten ${balance > 0 ? "aufgeteilt" : "abgezogen"}.${defaultNote} Konto wirklich löschen?`
-      : `Konto "${a.name}" wirklich löschen?${defaultNote}`;
-  if (!confirm(msg)) return;
 
-  if (newDefault) newDefault.isDefault = true;
+  let body = `<p class="hint">Konto "<strong>${a.emoji} ${a.name}</strong>" wirklich löschen? Das kann nicht rückgängig gemacht werden.</p>`;
+
+  if (balance !== 0) {
+    body += `<p class="hint">Kontostand: <strong>${fmt.format(balance)}</strong> – wird anteilig nach den Verteil-Prozentsätzen auf die übrigen Konten ${balance > 0 ? "aufgeteilt" : "abgezogen"}.</p>`;
+  }
+
+  if (a.isDefault) {
+    const suggested = remainingAccounts.reduce((best, acc) => (acc.distributionPercent > best.distributionPercent ? acc : best), remainingAccounts[0]);
+    body += `
+      <p class="hint">"${a.emoji} ${a.name}" ist aktuell das <strong>Standardkonto</strong>: Es bekommt automatisch den Rest bei "Einnahme verteilen" und "Ausgabe buchen" (Option "Alle Konten"), sowie nicht einzeln erfasste Differenzen beim Kontostand-Abgleich. Wähl, welches Konto diese Rolle stattdessen übernehmen soll:</p>
+      <label>Neues Standardkonto
+        <select id="deleteAccountNewDefault">
+          ${remainingAccounts
+            .map((acc) => `<option value="${acc.id}" ${acc.id === suggested.id ? "selected" : ""}>${acc.emoji} ${acc.name}</option>`)
+            .join("")}
+        </select>
+      </label>
+    `;
+  }
+
+  document.getElementById("deleteAccountBody").innerHTML = body;
+  const overlay = document.getElementById("deleteAccountModalOverlay");
+  overlay.dataset.accountId = id;
+  overlay.hidden = false;
+}
+
+function closeDeleteAccountModal() {
+  document.getElementById("deleteAccountModalOverlay").hidden = true;
+}
+
+function confirmDeleteAccount() {
+  const overlay = document.getElementById("deleteAccountModalOverlay");
+  const id = overlay.dataset.accountId;
+  const a = state.accounts.find((x) => x.id === id);
+  if (!a) {
+    closeDeleteAccountModal();
+    return;
+  }
+
+  const balance = getBalance(id);
+  const remainingAccounts = state.accounts.filter((x) => x.id !== id);
+
+  if (a.isDefault) {
+    const select = document.getElementById("deleteAccountNewDefault");
+    const newDefault = remainingAccounts.find((acc) => acc.id === select.value) || remainingAccounts[0];
+    newDefault.isDefault = true;
+  }
 
   if (balance !== 0) {
     const sign = balance > 0 ? 1 : -1;
@@ -1012,6 +1055,7 @@ function deleteAccount(id) {
     });
   }
   state.accounts = state.accounts.filter((x) => x.id !== id);
+  closeDeleteAccountModal();
   saveState();
   renderAll();
   toast("Konto gelöscht.");
@@ -1306,6 +1350,9 @@ function setupForms() {
   document.getElementById("goalInfoClose").addEventListener("click", () => {
     document.getElementById("goalInfoModalOverlay").hidden = true;
   });
+
+  document.getElementById("deleteAccountCancel").addEventListener("click", closeDeleteAccountModal);
+  document.getElementById("deleteAccountConfirm").addEventListener("click", confirmDeleteAccount);
 
   document.getElementById("serverUpdateReloadBtn").addEventListener("click", () => {
     location.href = location.pathname + "?refresh=" + Date.now();

@@ -342,6 +342,10 @@ th{color:var(--muted);font-weight:600;font-size:.78rem;text-transform:uppercase;
 }
 .modal-box h2{margin-top:0;}
 .modal-box .btn-primary{margin-top:12px;width:100%;}
+.modal-actions{display:flex;gap:10px;margin-top:12px;}
+.modal-actions button{flex:1;margin-top:0;}
+.modal-box select{width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:.9rem;margin-top:4px;}
+.modal-box label{display:block;font-size:.85rem;color:var(--muted);margin-top:10px;}
 
 .version-history{display:flex;flex-direction:column;gap:14px;}
 .version-entry{border-bottom:1px solid var(--border);padding-bottom:12px;}
