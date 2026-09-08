@@ -6,7 +6,7 @@
 <title>Mein Finanzplaner</title>
 <!-- ?v= muss bei jedem Release zusammen mit APP_VERSION in js/app.js erhöht werden,
      sonst liefert der Browser-Cache (max-age 10 Min. auf GitHub Pages) alte Dateien aus. -->
-<link rel="stylesheet" href="css/style.css?v=1.14.0">
+<link rel="stylesheet" href="css/style.css?v=1.15.0">
 </head>
 <body>
 
@@ -163,6 +163,18 @@
   <!-- EINSTELLUNGEN -->
   <section id="tab-einstellungen" class="tab-panel">
     <div class="card">
+      <h2>🏦 Standardkonto</h2>
+      <p class="hint">Das Standardkonto ist der "Auffang"-Topf der App: Es bekommt automatisch den Rest bei "Einnahme verteilen" und "Ausgabe buchen" (Option "Alle Konten"), sowie nicht einzeln erfasste Differenzen beim Kontostand-Abgleich.</p>
+      <p class="hint">Aktuelles Standardkonto: <strong id="currentDefaultAccount">–</strong></p>
+      <form id="defaultAccountForm" class="inline-form">
+        <label>Neues Standardkonto
+          <select id="defaultAccountSelect"></select>
+        </label>
+        <button type="submit" class="btn-primary">Übernehmen</button>
+      </form>
+    </div>
+
+    <div class="card">
       <h2>Kontostand abgleichen</h2>
       <p class="hint">Für die <strong>Ersteinrichtung</strong>: Schau in deiner Banking-App (z.&nbsp;B. Sparkasse) nach, wie viel wirklich auf dem Konto ist, und trag den Betrag hier ein. Danach reicht es im Alltag, Einnahmen zu verteilen und Ausgaben einzutragen unter "💰 Einnahme &amp; Ausgabe".</p>
       <p class="hint">Falls du mal vergessen hast, etwas einzutragen und der Kontostand nicht mehr stimmt: hier jederzeit neu abgleichen. Die App vergleicht deine Eingabe mit dem hier erfassten Stand und bucht nur die <strong>Differenz</strong> nach: Ist mehr Geld da, wird der neue Teil nach deinen Verteil-Prozentsätzen auf die Konten gebucht. Ist weniger Geld da, wird die Differenz als nicht einzeln erfasste Ausgabe anteilig von allen Konten abgezogen.</p>
@@ -206,6 +218,6 @@
 
 <div id="toast" class="toast"></div>
 
-<script src="js/app.js?v=1.14.0"></script>
+<script src="js/app.js?v=1.15.0"></script>
 </body>
 </html>

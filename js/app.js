@@ -4,8 +4,15 @@
 const STORAGE_KEY = "finanzplaner_v1";
 const VERSION_KEY = "finanzplaner_last_seen_version";
 
-const APP_VERSION = "1.14.0";
+const APP_VERSION = "1.15.0";
 const CHANGELOG = [
+  {
+    version: "1.15.0",
+    date: "2026-09-08",
+    changes: [
+      "Neue Karte \"🏦 Standardkonto\" unter Einstellungen: zeigt jederzeit an, welches Konto aktuell das Standardkonto ist, und lässt dich es jederzeit ändern – unabhängig vom Löschen eines Kontos.",
+    ],
+  },
   {
     version: "1.14.0",
     date: "2026-09-08",
@@ -693,6 +700,10 @@ function renderDistributeTab() {
 }
 
 function renderSettingsTab() {
+  const def = getDefaultAccount();
+  document.getElementById("currentDefaultAccount").textContent = `${def.emoji} ${def.name}`;
+  fillTargetSelect(document.getElementById("defaultAccountSelect"));
+
   if (!document.getElementById("reconcileDate").value) {
     document.getElementById("reconcileDate").value = todayISO();
   }
@@ -1193,6 +1204,19 @@ function setupTabs() {
 }
 
 function setupForms() {
+  document.getElementById("defaultAccountForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const chosenId = document.getElementById("defaultAccountSelect").value;
+    const chosen = state.accounts.find((a) => a.id === chosenId);
+    if (!chosen || chosen.isDefault) return;
+    state.accounts.forEach((a) => {
+      a.isDefault = a.id === chosen.id;
+    });
+    saveState();
+    renderAll();
+    toast(`${chosen.emoji} ${chosen.name} ist jetzt das Standardkonto.`);
+  });
+
   document.getElementById("reconcileAmount").addEventListener("input", (e) => {
     renderReconcilePreview(parseFloat(e.target.value));
   });
