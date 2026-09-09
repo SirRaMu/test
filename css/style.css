@@ -272,13 +272,16 @@ th{color:var(--muted);font-weight:600;font-size:.78rem;text-transform:uppercase;
 
 .transfer-textarea{
   width:100%;
-  min-height:90px;
+  min-height:140px;
   margin:10px 0;
   padding:10px 12px;
   border:1px solid var(--border);
   border-radius:8px;
   font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
   font-size:.78rem;
+  line-height:1.4;
+  overflow-wrap:anywhere;
+  word-break:break-all;
   resize:vertical;
   box-sizing:border-box;
 }
