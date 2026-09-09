@@ -4,8 +4,16 @@
 const STORAGE_KEY = "finanzplaner_v1";
 const VERSION_KEY = "finanzplaner_last_seen_version";
 
-const APP_VERSION = "1.17.0";
+const APP_VERSION = "1.18.0";
 const CHANGELOG = [
+  {
+    version: "1.18.0",
+    date: "2026-09-09",
+    changes: [
+      "Übertragungs-Code wird jetzt komprimiert (gzip) – typischerweise 60-70% kürzer als vorher. Das verringert das Risiko, dass Kopieren auf manchen Geräten (z.B. Apples \"Universal-Zwischenablage\") bei langem Text nicht sauber funktioniert.",
+      "Neuer Hinweis: Falls das Kopieren trotzdem nicht zuverlässig klappt, wird jetzt aktiv \"Backup exportieren\" + Versand der Datei (z.B. per AirDrop) als zuverlässigere Alternative vorgeschlagen. Alte Codes (v1.17.x und älter) müssen neu erzeugt werden.",
+    ],
+  },
   {
     version: "1.17.0",
     date: "2026-09-09",
@@ -178,15 +186,16 @@ const todayISO = () => new Date().toISOString().slice(0, 10);
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 
 /* ---- Übertragungs-Code (Backup als Text statt Datei, z.B. per WhatsApp/Mail) ----
-   Nutzt eine URL-sichere Base64-Variante (- _ statt + /, kein Padding) und entfernt
-   beim Einlesen konsequent JEDEN Leerraum (Zeilenumbrüche, Leerzeichen), weil manche
-   Messenger/Notiz-Apps beim Kopieren von langem Text unsichtbar welche einfügen.
-   Format: FPLAN3:<länge>.<prüfsumme>:<daten> – Länge+Prüfsumme erkennen präzise,
-   ob beim Kopieren etwas abgeschnitten oder verändert wurde, statt nur "ungültig". */
-const TRANSFER_PREFIX = "FPLAN3:";
+   Nutzt eine URL-sichere Base64-Variante (- _ statt + /, kein Padding), komprimiert
+   die Daten wenn möglich (gzip via CompressionStream) um den Code deutlich kürzer zu
+   machen, und entfernt beim Einlesen konsequent JEDEN Leerraum (Zeilenumbrüche,
+   Leerzeichen), weil manche Messenger/Notiz-Apps die unsichtbar einfügen.
+   Format: FPLAN4:<länge>.<prüfsumme>:<Z oder R><daten> – Z=komprimiert, R=roh
+   (Fallback falls der Browser kein CompressionStream kann). Länge+Prüfsumme
+   erkennen präzise, ob beim Kopieren etwas abgeschnitten/verändert wurde. */
+const TRANSFER_PREFIX = "FPLAN4:";
 
-function toBase64Unicode(str) {
-  const bytes = new TextEncoder().encode(str);
+function toBase64Unicode(bytes) {
   let binary = "";
   bytes.forEach((b) => (binary += String.fromCharCode(b)));
   return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
@@ -197,7 +206,7 @@ function fromBase64Unicode(b64url) {
   const binary = atob(b64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return new TextDecoder().decode(bytes);
+  return bytes;
 }
 // Einfache, schnelle Prüfsumme (FNV-1a), nur um Kopierfehler zu erkennen – keine Kryptografie nötig.
 function simpleHash(str) {
@@ -209,13 +218,26 @@ function simpleHash(str) {
   return (h >>> 0).toString(36);
 }
 
-function generateTransferCode() {
-  const payload = toBase64Unicode(JSON.stringify(state));
+async function generateTransferCode() {
+  const jsonBytes = new TextEncoder().encode(JSON.stringify(state));
+  let flag = "R";
+  let bytes = jsonBytes;
+  if (typeof CompressionStream !== "undefined") {
+    try {
+      const stream = new Blob([jsonBytes]).stream().pipeThrough(new CompressionStream("gzip"));
+      bytes = new Uint8Array(await new Response(stream).arrayBuffer());
+      flag = "Z";
+    } catch (e) {
+      bytes = jsonBytes;
+      flag = "R";
+    }
+  }
+  const payload = flag + toBase64Unicode(bytes);
   return `${TRANSFER_PREFIX}${payload.length}.${simpleHash(payload)}:${payload}`;
 }
 
 // Wirft einen Error mit verständlicher Meldung, falls der Code ungültig/unvollständig ist.
-function decodeTransferCode(raw) {
+async function decodeTransferCode(raw) {
   const cleaned = raw.replace(/\s+/g, "");
   if (!cleaned.startsWith(TRANSFER_PREFIX)) {
     throw new Error("Das sieht nicht nach einem gültigen Finanzplaner-Code aus. Bitte den kompletten Code neu kopieren (nichts hinzufügen oder weglassen).");
@@ -232,16 +254,31 @@ function decodeTransferCode(raw) {
   }
   if (payload.length !== expectedLen) {
     throw new Error(
-      `Der Code ist unvollständig: erwartet wurden ${expectedLen} Zeichen, gefunden wurden nur ${payload.length}. Beim Kopieren wurde offenbar ein Teil abgeschnitten – bitte komplett neu kopieren und einfügen.`
+      `Der Code ist unvollständig: erwartet wurden ${expectedLen} Zeichen, gefunden wurden nur ${payload.length}. Beim Kopieren wurde offenbar ein Teil abgeschnitten – nutz stattdessen lieber "Backup exportieren" weiter unten und schick dir die Datei z.B. per AirDrop oder Mail.`
     );
   }
   if (expectedHash && simpleHash(payload) !== expectedHash) {
-    throw new Error("Der Code wurde beim Kopieren offenbar verändert (z.B. durch Autokorrektur). Bitte komplett neu kopieren und einfügen.");
+    throw new Error("Der Code wurde beim Kopieren offenbar verändert (z.B. durch Autokorrektur). Bitte komplett neu kopieren und einfügen, oder stattdessen \"Backup exportieren\" nutzen.");
+  }
+
+  const flag = payload[0];
+  const bytes = fromBase64Unicode(payload.slice(1));
+  let jsonBytes = bytes;
+  if (flag === "Z") {
+    if (typeof DecompressionStream === "undefined") {
+      throw new Error("Dieser Browser kann den komprimierten Code nicht entpacken. Bitte ein aktuelleres Gerät/Browser verwenden oder stattdessen \"Backup exportieren\" nutzen.");
+    }
+    try {
+      const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
+      jsonBytes = new Uint8Array(await new Response(stream).arrayBuffer());
+    } catch (e) {
+      throw new Error("Code konnte nicht entpackt werden. Bitte prüfen, ob er komplett und unverändert eingefügt wurde.");
+    }
   }
 
   let data;
   try {
-    data = JSON.parse(fromBase64Unicode(payload));
+    data = JSON.parse(new TextDecoder().decode(jsonBytes));
   } catch (e) {
     throw new Error("Code konnte nicht gelesen werden. Bitte prüfen, ob er komplett und unverändert eingefügt wurde.");
   }
@@ -1421,9 +1458,9 @@ function setupForms() {
     renderAll();
   });
 
-  document.getElementById("generateCodeBtn").addEventListener("click", () => {
+  document.getElementById("generateCodeBtn").addEventListener("click", async () => {
     const output = document.getElementById("transferCodeOutput");
-    output.value = generateTransferCode();
+    output.value = await generateTransferCode();
     output.hidden = false;
     document.getElementById("copyCodeBtn").hidden = false;
     const lengthHint = document.getElementById("transferCodeLength");
@@ -1474,13 +1511,13 @@ function setupForms() {
     document.getElementById("transferCodeError").hidden = true;
   });
 
-  document.getElementById("importCodeBtn").addEventListener("click", () => {
+  document.getElementById("importCodeBtn").addEventListener("click", async () => {
     const raw = document.getElementById("transferCodeInput").value;
     const errorBox = document.getElementById("transferCodeError");
     errorBox.hidden = true;
     if (!raw.trim()) return;
     try {
-      const data = decodeTransferCode(raw);
+      const data = await decodeTransferCode(raw);
       if (!confirm("Aktuelle Daten mit diesem Code überschreiben?")) return;
       state = data;
       saveState();
