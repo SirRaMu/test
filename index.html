@@ -6,7 +6,7 @@
 <title>Mein Finanzplaner</title>
 <!-- ?v= muss bei jedem Release zusammen mit APP_VERSION in js/app.js erhöht werden,
      sonst liefert der Browser-Cache (max-age 10 Min. auf GitHub Pages) alte Dateien aus. -->
-<link rel="stylesheet" href="css/style.css?v=1.16.1">
+<link rel="stylesheet" href="css/style.css?v=1.17.0">
 </head>
 <body>
 
@@ -212,11 +212,13 @@
         <button id="copyCodeBtn" class="btn-secondary" hidden>📋 Code kopieren</button>
       </div>
       <textarea id="transferCodeOutput" class="transfer-textarea" readonly hidden placeholder="Hier erscheint dein Code."></textarea>
+      <p class="hint" id="transferCodeLength" hidden></p>
 
       <hr class="transfer-divider">
 
       <p class="hint"><strong>Code von einem anderen Gerät einfügen:</strong></p>
       <textarea id="transferCodeInput" class="transfer-textarea" placeholder="Code hier einfügen..."></textarea>
+      <div id="transferCodeError" class="transfer-error" hidden></div>
       <button id="importCodeBtn" class="btn-primary">Code übernehmen</button>
     </div>
 
@@ -236,6 +238,6 @@
 
 <div id="toast" class="toast"></div>
 
-<script src="js/app.js?v=1.16.1"></script>
+<script src="js/app.js?v=1.17.0"></script>
 </body>
 </html>

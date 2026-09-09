@@ -4,8 +4,16 @@
 const STORAGE_KEY = "finanzplaner_v1";
 const VERSION_KEY = "finanzplaner_last_seen_version";
 
-const APP_VERSION = "1.16.1";
+const APP_VERSION = "1.17.0";
 const CHANGELOG = [
+  {
+    version: "1.17.0",
+    date: "2026-09-09",
+    changes: [
+      "Übertragungs-Code enthält jetzt Länge + Prüfsumme. Die App erkennt dadurch präzise, ob beim Kopieren ein Teil abgeschnitten wurde oder sich etwas verändert hat, und sagt das auch genau so (statt nur \"ungültiger Code\"). Alte Codes (v1.16.x) müssen neu erzeugt werden.",
+      "Fehlermeldung beim Code-Einfügen erscheint jetzt als Textbox direkt im Formular statt als störendes Pop-up, und die erzeugte Code-Länge wird zur Kontrolle angezeigt.",
+    ],
+  },
   {
     version: "1.16.1",
     date: "2026-09-09",
@@ -172,8 +180,10 @@ const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 
 /* ---- Übertragungs-Code (Backup als Text statt Datei, z.B. per WhatsApp/Mail) ----
    Nutzt eine URL-sichere Base64-Variante (- _ statt + /, kein Padding) und entfernt
    beim Einlesen konsequent JEDEN Leerraum (Zeilenumbrüche, Leerzeichen), weil manche
-   Messenger/Notiz-Apps beim Kopieren von langem Text unsichtbar welche einfügen. */
-const TRANSFER_PREFIX = "FPLAN2:";
+   Messenger/Notiz-Apps beim Kopieren von langem Text unsichtbar welche einfügen.
+   Format: FPLAN3:<länge>.<prüfsumme>:<daten> – Länge+Prüfsumme erkennen präzise,
+   ob beim Kopieren etwas abgeschnitten oder verändert wurde, statt nur "ungültig". */
+const TRANSFER_PREFIX = "FPLAN3:";
 
 function toBase64Unicode(str) {
   const bytes = new TextEncoder().encode(str);
@@ -189,18 +199,49 @@ function fromBase64Unicode(b64url) {
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
   return new TextDecoder().decode(bytes);
 }
-function generateTransferCode() {
-  return TRANSFER_PREFIX + toBase64Unicode(JSON.stringify(state));
+// Einfache, schnelle Prüfsumme (FNV-1a), nur um Kopierfehler zu erkennen – keine Kryptografie nötig.
+function simpleHash(str) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) {
+    h ^= str.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return (h >>> 0).toString(36);
 }
-// Wirft einen Error mit verständlicher Meldung, falls der Code ungültig ist.
+
+function generateTransferCode() {
+  const payload = toBase64Unicode(JSON.stringify(state));
+  return `${TRANSFER_PREFIX}${payload.length}.${simpleHash(payload)}:${payload}`;
+}
+
+// Wirft einen Error mit verständlicher Meldung, falls der Code ungültig/unvollständig ist.
 function decodeTransferCode(raw) {
   const cleaned = raw.replace(/\s+/g, "");
   if (!cleaned.startsWith(TRANSFER_PREFIX)) {
-    throw new Error("Das sieht nicht nach einem gültigen Finanzplaner-Code aus. Bitte den kompletten Code kopieren (nichts hinzufügen oder weglassen).");
+    throw new Error("Das sieht nicht nach einem gültigen Finanzplaner-Code aus. Bitte den kompletten Code neu kopieren (nichts hinzufügen oder weglassen).");
   }
+  const rest = cleaned.slice(TRANSFER_PREFIX.length);
+  const sepIdx = rest.indexOf(":");
+  const metaPart = sepIdx === -1 ? "" : rest.slice(0, sepIdx);
+  const payload = sepIdx === -1 ? rest : rest.slice(sepIdx + 1);
+  const [lenStr, expectedHash] = metaPart.split(".");
+  const expectedLen = parseInt(lenStr, 10);
+
+  if (sepIdx === -1 || isNaN(expectedLen)) {
+    throw new Error("Der Code ist unvollständig – es fehlt ein Teil davon. Bitte auf dem anderen Gerät nochmal auf \"Code kopieren\" tippen und komplett neu einfügen.");
+  }
+  if (payload.length !== expectedLen) {
+    throw new Error(
+      `Der Code ist unvollständig: erwartet wurden ${expectedLen} Zeichen, gefunden wurden nur ${payload.length}. Beim Kopieren wurde offenbar ein Teil abgeschnitten – bitte komplett neu kopieren und einfügen.`
+    );
+  }
+  if (expectedHash && simpleHash(payload) !== expectedHash) {
+    throw new Error("Der Code wurde beim Kopieren offenbar verändert (z.B. durch Autokorrektur). Bitte komplett neu kopieren und einfügen.");
+  }
+
   let data;
   try {
-    data = JSON.parse(fromBase64Unicode(cleaned.slice(TRANSFER_PREFIX.length)));
+    data = JSON.parse(fromBase64Unicode(payload));
   } catch (e) {
     throw new Error("Code konnte nicht gelesen werden. Bitte prüfen, ob er komplett und unverändert eingefügt wurde.");
   }
@@ -1385,6 +1426,9 @@ function setupForms() {
     output.value = generateTransferCode();
     output.hidden = false;
     document.getElementById("copyCodeBtn").hidden = false;
+    const lengthHint = document.getElementById("transferCodeLength");
+    lengthHint.textContent = `Länge: ${output.value.length} Zeichen – nach dem Einfügen auf dem anderen Gerät sollte genau diese Länge ankommen.`;
+    lengthHint.hidden = false;
     output.focus();
     output.setSelectionRange(0, output.value.length);
     toast("Code erzeugt – jetzt kopieren und aufs andere Gerät schicken.");
@@ -1426,8 +1470,14 @@ function setupForms() {
     }
   });
 
+  document.getElementById("transferCodeInput").addEventListener("input", () => {
+    document.getElementById("transferCodeError").hidden = true;
+  });
+
   document.getElementById("importCodeBtn").addEventListener("click", () => {
     const raw = document.getElementById("transferCodeInput").value;
+    const errorBox = document.getElementById("transferCodeError");
+    errorBox.hidden = true;
     if (!raw.trim()) return;
     try {
       const data = decodeTransferCode(raw);
@@ -1438,7 +1488,8 @@ function setupForms() {
       renderAll();
       toast("Daten übernommen.");
     } catch (err) {
-      alert(err.message);
+      errorBox.textContent = "⚠️ " + err.message;
+      errorBox.hidden = false;
     }
   });
 
