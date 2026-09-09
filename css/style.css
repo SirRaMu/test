@@ -286,6 +286,14 @@ th{color:var(--muted);font-weight:600;font-size:.78rem;text-transform:uppercase;
   box-sizing:border-box;
 }
 .transfer-divider{border:none;border-top:1px solid var(--border);margin:18px 0;}
+.transfer-error{
+  background:#fee2e2;
+  color:#b91c1c;
+  border-radius:8px;
+  padding:10px 12px;
+  font-size:.85rem;
+  margin-bottom:12px;
+}
 
 .danger-zone{border:1px solid #fecaca;}
 .danger-zone h2{color:#b91c1c;}
