@@ -4,8 +4,17 @@
 const STORAGE_KEY = "finanzplaner_v1";
 const VERSION_KEY = "finanzplaner_last_seen_version";
 
-const APP_VERSION = "1.16.0";
+const APP_VERSION = "1.16.1";
 const CHANGELOG = [
+  {
+    version: "1.16.1",
+    date: "2026-09-09",
+    changes: [
+      "Fix: Übertragungs-Code auf Handys zuverlässiger gemacht – entfernt jetzt konsequent Leerzeichen/Zeilenumbrüche, die manche Messenger/Notiz-Apps beim Kopieren von langem Text unsichtbar einfügen, und nutzt sicherere Zeichen. Alte Codes (v1.16.0) müssen neu erzeugt werden.",
+      "\"Code kopieren\" markiert den Text jetzt immer sichtbar, damit man notfalls auch manuell (lange drücken → Kopieren) kopieren kann, falls der automatische Weg auf einem Gerät nicht klappt.",
+      "Die Code-Box ist jetzt größer und bricht lange Zeichenketten zuverlässig um.",
+    ],
+  },
   {
     version: "1.16.0",
     date: "2026-09-08",
@@ -160,16 +169,21 @@ const fmtDate = (iso) => {
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
 
-/* ---- Übertragungs-Code (Backup als Text statt Datei, z.B. per WhatsApp/Mail) ---- */
-const TRANSFER_PREFIX = "FPLAN1:";
+/* ---- Übertragungs-Code (Backup als Text statt Datei, z.B. per WhatsApp/Mail) ----
+   Nutzt eine URL-sichere Base64-Variante (- _ statt + /, kein Padding) und entfernt
+   beim Einlesen konsequent JEDEN Leerraum (Zeilenumbrüche, Leerzeichen), weil manche
+   Messenger/Notiz-Apps beim Kopieren von langem Text unsichtbar welche einfügen. */
+const TRANSFER_PREFIX = "FPLAN2:";
 
 function toBase64Unicode(str) {
   const bytes = new TextEncoder().encode(str);
   let binary = "";
   bytes.forEach((b) => (binary += String.fromCharCode(b)));
-  return btoa(binary);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
-function fromBase64Unicode(b64) {
+function fromBase64Unicode(b64url) {
+  let b64 = b64url.replace(/-/g, "+").replace(/_/g, "/");
+  while (b64.length % 4 !== 0) b64 += "=";
   const binary = atob(b64);
   const bytes = new Uint8Array(binary.length);
   for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
@@ -180,15 +194,15 @@ function generateTransferCode() {
 }
 // Wirft einen Error mit verständlicher Meldung, falls der Code ungültig ist.
 function decodeTransferCode(raw) {
-  const trimmed = raw.trim();
-  if (!trimmed.startsWith(TRANSFER_PREFIX)) {
-    throw new Error("Das sieht nicht nach einem gültigen Finanzplaner-Code aus. Bitte den Code vollständig kopieren.");
+  const cleaned = raw.replace(/\s+/g, "");
+  if (!cleaned.startsWith(TRANSFER_PREFIX)) {
+    throw new Error("Das sieht nicht nach einem gültigen Finanzplaner-Code aus. Bitte den kompletten Code kopieren (nichts hinzufügen oder weglassen).");
   }
   let data;
   try {
-    data = JSON.parse(fromBase64Unicode(trimmed.slice(TRANSFER_PREFIX.length)));
+    data = JSON.parse(fromBase64Unicode(cleaned.slice(TRANSFER_PREFIX.length)));
   } catch (e) {
-    throw new Error("Code konnte nicht gelesen werden. Bitte prüfen, ob er vollständig eingefügt wurde.");
+    throw new Error("Code konnte nicht gelesen werden. Bitte prüfen, ob er komplett und unverändert eingefügt wurde.");
   }
   if (!data.accounts || !data.transactions) {
     throw new Error("Ungültiges Datenformat im Code.");
@@ -1371,19 +1385,44 @@ function setupForms() {
     output.value = generateTransferCode();
     output.hidden = false;
     document.getElementById("copyCodeBtn").hidden = false;
+    output.focus();
+    output.setSelectionRange(0, output.value.length);
     toast("Code erzeugt – jetzt kopieren und aufs andere Gerät schicken.");
   });
 
-  document.getElementById("copyCodeBtn").addEventListener("click", async () => {
+  // Tippt/tappt man selbst in die Code-Anzeige, gleich alles markieren (einfacher
+  // manueller Kopierweg auf jedem Gerät).
+  document.getElementById("transferCodeOutput").addEventListener("focus", (e) => {
+    e.target.setSelectionRange(0, e.target.value.length);
+  });
+
+  document.getElementById("copyCodeBtn").addEventListener("click", () => {
     const output = document.getElementById("transferCodeOutput");
+    // Text immer sichtbar markieren, damit man notfalls manuell (lange drücken → Kopieren)
+    // kopieren kann, egal ob die folgenden automatischen Wege auf dem Gerät funktionieren.
+    output.hidden = false;
+    output.focus();
+    output.setSelectionRange(0, output.value.length);
+
+    let execCopyWorked = false;
     try {
-      await navigator.clipboard.writeText(output.value);
-      toast("Code kopiert.");
+      execCopyWorked = document.execCommand("copy");
     } catch (e) {
-      output.removeAttribute("hidden");
-      output.select();
-      document.execCommand("copy");
+      execCopyWorked = false;
+    }
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard
+        .writeText(output.value)
+        .then(() => toast("Code kopiert."))
+        .catch(() => {
+          if (execCopyWorked) toast("Code kopiert.");
+          else toast("Kopieren hat nicht automatisch geklappt – Text ist markiert, einfach manuell kopieren.");
+        });
+    } else if (execCopyWorked) {
       toast("Code kopiert.");
+    } else {
+      toast("Kopieren hat nicht automatisch geklappt – Text ist markiert, einfach manuell kopieren.");
     }
   });
 
