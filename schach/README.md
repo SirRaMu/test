@@ -1,0 +1,59 @@
+# ♞ Schach-Eröffnungstrainer mit Claude
+
+Eine Web-App, die dir Schacheröffnungen am **echten Brett** beibringt:
+Handy-Kamera aufs Brett richten, mit dem Trainer **sprechen**, und Claude erkennt,
+welche Züge du ausführst, sagt dir, was du ziehen sollst, und erklärt die Ideen.
+
+## Was die App kann
+
+- **14 Eröffnungen, 37 Varianten** mit deutscher Erklärung zu jedem Zug,
+  u. a. Albin-Gegengambit, Evans-Gambit, Dänisches Gambit, Königsgambit,
+  Italienisch, Spanisch, Schottisch, Fried Liver, Sizilianisch (Najdorf),
+  Französisch, Caro-Kann, Damengambit, Londoner System, Skandinavisch.
+- **Lernmodus:** Der Trainer sagt jeden Zug an (und zeigt ihn auf dem Brett), auch die
+  Züge des Gegners, die du dann für ihn ausführst.
+- **Abfragemodus:** Du spielst die Variante aus dem Gedächtnis. „Tipp“ verrät erst die
+  Figur, dann den Zug.
+- **Mitspieler-Modus:** Jemand spielt frei gegen dich. Verlässt er die Theorie, erklärt
+  Claude den Zug und schlägt deine Antwort vor.
+- **Kamera-Erkennung:** Die App merkt selbst, wann deine Hand übers Brett geht und wann
+  sie wieder weg ist. Dann schickt sie ein Vorher/Nachher-Foto an Claude, das den
+  gespielten Zug unter den legalen Zügen heraussucht.
+- **Sprechen:** 🎤 antippen und einfach reden:
+  - Züge: „e4“, „Springer f3“, „Läufer schlägt c6“, „kurze Rochade“
+  - Befehle: „erledigt“ / „ok“ (Zug ausgeführt), „Tipp“, „nochmal“, „zurück“, „stopp“
+  - Alles andere ist eine Frage an den Trainer: „Warum spielt man hier c3?“
+- Der Trainer **spricht** alle Ansagen und Antworten laut aus (abschaltbar).
+- Fortschritt (fehlerfrei gespielte Varianten) wird lokal gespeichert.
+
+## Einrichtung
+
+1. **Claude-API-Schlüssel besorgen** auf <https://console.anthropic.com/settings/keys>
+   (braucht ein Anthropic-Konto mit etwas Guthaben). In der App unter ⚙️ eintragen,
+   „Verbindung testen“ und speichern. Der Schlüssel bleibt nur in deinem Browser.
+   Kosten grob: 1–2 Cent pro per Kamera erkanntem Zug mit Claude Opus 5.5,
+   mit Sonnet 5.5 etwa die Hälfte. Fragen kosten weniger als einen Cent.
+2. **Über https öffnen.** Kamera und Mikrofon funktionieren im Browser nur über
+   `https://` (oder `localhost`). Am einfachsten über GitHub Pages:
+   `https://<dein-name>.github.io/<repo>/schach/`
+3. **Handy aufstellen:** Kamera so, dass das ganze Brett zu sehen ist, am besten
+   schräg von oben von der weißen Seite. Unter ⚙️ die Kamera-Perspektive einstellen.
+4. Eröffnung wählen → Variante → **Training starten** → 📷 Kamera starten → 🎤 antippen.
+
+Empfohlene Browser: **Chrome auf Android** (alles funktioniert) oder **Safari auf dem
+iPhone** (Spracherkennung je nach iOS-Version eingeschränkt, dann unten tippen).
+
+Ohne API-Schlüssel geht der Trainer auch: Züge per Sprache, Antippen auf dem
+digitalen Brett oder „✅ Zug ausgeführt“ bestätigen. Nur Kamera-Erkennung und
+Fragen an Claude brauchen den Schlüssel.
+
+## Technik
+
+- Reines HTML/CSS/JavaScript, kein Build-Schritt.
+- Schachregeln: [chess.js](https://github.com/jhlywa/chess.js) (lokal unter `vendor/`, BSD-Lizenz).
+- KI: offizielles Anthropic-SDK (`@anthropic-ai/sdk`), direkt aus dem Browser geladen.
+  Standardmodell `claude-opus-5-5`; mit serverseitigem Fallback, falls ein Modell
+  eine Anfrage ablehnt.
+- Sprache: Web Speech API (Spracherkennung und Sprachausgabe des Browsers).
+- Tests: `node schach/tests/validate-openings.mjs` (prüft alle Varianten auf legale Züge)
+  und `node schach/tests/speech-parse.mjs` (deutscher Zug-Parser).

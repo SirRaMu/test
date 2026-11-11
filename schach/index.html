@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#1f2a24">
+<title>Eröffnungstrainer</title>
+<link rel="stylesheet" href="style.css?v=1.0.0">
+</head>
+<body>
+
+<header class="top">
+  <button id="btnBack" class="icon-btn" hidden aria-label="Zurück zur Auswahl">←</button>
+  <div class="brand">
+    <span class="logo">♞</span>
+    <div>
+      <h1>Eröffnungstrainer</h1>
+      <p class="sub" id="topSub">mit Claude, Kamera &amp; Sprache</p>
+    </div>
+  </div>
+  <button id="btnSettings" class="icon-btn" aria-label="Einstellungen">⚙️</button>
+</header>
+
+<!-- ============ Auswahl ============ -->
+<main id="screenMenu" class="screen">
+  <section id="setupHint" class="card setup" hidden>
+    <h2>👋 Willkommen!</h2>
+    <p>So funktioniert's:</p>
+    <ol>
+      <li>Trag unter <b>⚙️ Einstellungen</b> deinen <b>Claude-API-Schlüssel</b> ein (für Kamera-Erkennung und Gespräche).</li>
+      <li>Wähle eine Eröffnung und eine Variante.</li>
+      <li>Stell dein Handy so auf, dass die Kamera das ganze Brett von oben/schräg sieht.</li>
+      <li>Tippe auf <b>🎤</b> und sprich mit deinem Trainer – oder spiel einfach los.</li>
+    </ol>
+    <p class="muted">Ohne Schlüssel funktioniert der Trainer auch: Züge dann per Sprache („Springer f3“), Antippen oder „erledigt“ bestätigen.</p>
+    <button class="btn primary" id="btnSetupOpen">Schlüssel eintragen</button>
+  </section>
+
+  <div class="tabs" role="tablist">
+    <button class="tab active" data-filter="all">Alle</button>
+    <button class="tab" data-filter="w">Mit Weiß</button>
+    <button class="tab" data-filter="b">Mit Schwarz</button>
+  </div>
+  <div id="openingList" class="opening-list"></div>
+</main>
+
+<!-- ============ Eröffnungsdetails ============ -->
+<dialog id="dlgOpening" class="sheet">
+  <form method="dialog" class="sheet-body">
+    <h2 id="opTitle"></h2>
+    <p id="opSummary" class="muted"></p>
+    <ul id="opIdeas" class="ideas"></ul>
+    <h3>Variante</h3>
+    <div id="opLines" class="choice-list"></div>
+    <h3>Modus</h3>
+    <div class="seg">
+      <label><input type="radio" name="mode" value="learn" checked><span>📖 Lernen<small>Trainer sagt jeden Zug an</small></span></label>
+      <label><input type="radio" name="mode" value="quiz"><span>🧩 Abfragen<small>Du spielst aus dem Gedächtnis</small></span></label>
+    </div>
+    <h3>Gegner</h3>
+    <div class="seg">
+      <label><input type="radio" name="opp" value="app" checked><span>🤖 Trainer sagt an<small>Du führst die Gegnerzüge selbst aus</small></span></label>
+      <label><input type="radio" name="opp" value="partner"><span>👥 Mitspieler<small>Jemand spielt frei gegen dich</small></span></label>
+    </div>
+    <div class="sheet-actions">
+      <button class="btn" value="cancel">Abbrechen</button>
+      <button class="btn primary" id="btnStart" value="start">▶ Training starten</button>
+    </div>
+  </form>
+</dialog>
+
+<!-- ============ Training ============ -->
+<main id="screenTrain" class="screen" hidden>
+  <section class="train-head">
+    <div>
+      <div class="op-name" id="trOpening"></div>
+      <div class="line-name" id="trLine"></div>
+    </div>
+    <div class="score" id="trScore"></div>
+  </section>
+  <div class="progress"><div id="trProgress"></div></div>
+
+  <div class="train-grid">
+    <section class="cam card">
+      <div class="cam-view" id="camView">
+        <video id="video" playsinline muted></video>
+        <div class="cam-off" id="camOff">
+          <p>📷 Kamera aus</p>
+          <button class="btn primary" id="btnCam">Kamera starten</button>
+        </div>
+        <span class="pill" id="camStatus">aus</span>
+        <div class="motion"><div id="motionBar"></div></div>
+      </div>
+      <div class="cam-actions">
+        <button class="btn small" id="btnCamToggle">📷 An/Aus</button>
+        <button class="btn small" id="btnCamSwitch">🔄 Wechseln</button>
+        <button class="btn small" id="btnDetect">📸 Zug prüfen</button>
+      </div>
+    </section>
+
+    <section class="board-wrap">
+      <div id="board" class="board" aria-label="Schachbrett"></div>
+    </section>
+
+    <section class="coach card">
+      <div class="coach-head">
+        <span class="avatar">♛</span>
+        <div class="coach-say">
+          <div id="coachMain" class="coach-main"></div>
+          <div id="coachNote" class="coach-note"></div>
+        </div>
+      </div>
+      <div class="actions">
+        <button class="btn primary" id="btnDone">✅ Zug ausgeführt</button>
+        <button class="btn" id="btnHint">💡 Tipp</button>
+        <button class="btn" id="btnWhy">🧠 Warum?</button>
+        <button class="btn" id="btnRepeat">🔁 Nochmal</button>
+        <button class="btn" id="btnUndo">↩️ Zurück</button>
+      </div>
+      <div id="finishBox" class="finish" hidden>
+        <button class="btn primary" id="btnAgain">🔁 Nochmal</button>
+        <button class="btn" id="btnNextLine">➡️ Nächste Variante</button>
+        <button class="btn" id="btnQuiz">🧩 Jetzt abfragen</button>
+        <button class="btn" id="btnSummary">🧠 Zusammenfassung</button>
+      </div>
+    </section>
+
+    <section class="talk card">
+      <div class="mic-row">
+        <button id="btnMic" class="mic" aria-label="Mikrofon an/aus">🎤</button>
+        <div class="mic-info">
+          <div id="micState" class="mic-state">Mikrofon aus – tippe zum Sprechen</div>
+          <div id="micPartial" class="mic-partial"></div>
+        </div>
+        <button id="btnVoice" class="icon-btn" aria-label="Sprachausgabe an/aus">🔊</button>
+      </div>
+      <div id="chatLog" class="chat-log"></div>
+      <form id="chatForm" class="chat-form">
+        <input id="chatInput" type="text" placeholder="Frag deinen Trainer oder tippe einen Zug (z. B. Sf3)…" autocomplete="off">
+        <button class="btn primary" type="submit">Senden</button>
+      </form>
+    </section>
+  </div>
+</main>
+
+<!-- ============ Einstellungen ============ -->
+<dialog id="dlgSettings" class="sheet">
+  <form method="dialog" class="sheet-body" id="settingsForm">
+    <h2>⚙️ Einstellungen</h2>
+
+    <h3>Claude-Verbindung</h3>
+    <label class="field">API-Schlüssel
+      <div class="row">
+        <input id="setKey" type="password" placeholder="sk-ant-…" autocomplete="off" spellcheck="false">
+        <button type="button" class="btn small" id="btnShowKey">👁</button>
+      </div>
+    </label>
+    <p class="muted small">Einen Schlüssel bekommst du auf <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a>. Er wird nur hier im Browser gespeichert und nur an Anthropic gesendet. Kosten: grob 1–2 Cent pro erkanntem Zug mit Opus.</p>
+    <label class="field">Modell
+      <select id="setModel"></select>
+    </label>
+    <div class="row">
+      <button type="button" class="btn small" id="btnTestKey">Verbindung testen</button>
+      <span id="testResult" class="small"></span>
+    </div>
+
+    <h3>Kamera</h3>
+    <label class="field">Von wo schaut die Kamera auf das Brett?
+      <select id="setPerspective">
+        <option value="von der Seite von Weiß (Weiß unten im Bild)">Von der Weiß-Seite (Weiß unten)</option>
+        <option value="von der Seite von Schwarz (Schwarz unten im Bild)">Von der Schwarz-Seite (Schwarz unten)</option>
+        <option value="von der Seite, Weiß links im Bild">Seitlich, Weiß links</option>
+        <option value="von der Seite, Weiß rechts im Bild">Seitlich, Weiß rechts</option>
+        <option value="unbekannt – bitte selbst aus dem Bild ableiten">Weiß ich nicht / automatisch</option>
+      </select>
+    </label>
+    <label class="check"><input type="checkbox" id="setAutoDetect" checked> Züge automatisch erkennen, sobald die Hand weg ist</label>
+
+    <h3>Sprache</h3>
+    <label class="check"><input type="checkbox" id="setVoice" checked> Trainer spricht laut</label>
+    <label class="field">Sprechtempo <input type="range" id="setRate" min="0.7" max="1.4" step="0.05" value="1.05"></label>
+    <label class="check"><input type="checkbox" id="setNotes" checked> Erklärung zu jedem Zug vorlesen</label>
+
+    <div class="sheet-actions">
+      <button class="btn primary" value="save">Speichern</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toast" class="toast" hidden></div>
+
+<script type="module" src="js/app.js?v=1.0.0"></script>
+</body>
+</html>

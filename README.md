@@ -63,3 +63,10 @@ Reines HTML/CSS/JavaScript (keine Frameworks, keine externen Abhängigkeiten).
 Alle Diagramme sind selbst mit `<canvas>` gezeichnet, damit die App auch ganz
 ohne Internetverbindung läuft. Daten liegen ausschließlich lokal im Browser
 (`localStorage`) – nichts wird irgendwohin gesendet.
+
+---
+
+## ♞ Außerdem im Repo: Schach-Eröffnungstrainer
+
+Im Ordner [`schach/`](schach/) liegt ein Eröffnungstrainer mit Claude, Handy-Kamera
+und Sprachsteuerung. Anleitung: [schach/README.md](schach/README.md).
