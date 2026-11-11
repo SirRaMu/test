@@ -16,6 +16,9 @@ welche Züge du ausführst, sagt dir, was du ziehen sollst, und erklärt die Ide
   Figur, dann den Zug.
 - **Mitspieler-Modus:** Jemand spielt frei gegen dich. Verlässt er die Theorie, erklärt
   Claude den Zug und schlägt deine Antwort vor.
+- **Gegen Claude spielen:** Nach jeder Eröffnung „♟️ Weiterspielen gegen Claude“ – oder
+  im Menü direkt eine **freie Partie** starten. Claude sagt seine Züge an (du führst sie
+  für ihn auf dem Brett aus), kommentiert deine Züge, und „Tipp“ liefert einen Vorschlag.
 - **Kamera-Erkennung:** Die App merkt selbst, wann deine Hand übers Brett geht und wann
   sie wieder weg ist. Dann schickt sie ein Vorher/Nachher-Foto an Claude, das den
   gespielten Zug unter den legalen Zügen heraussucht.
@@ -23,6 +26,8 @@ welche Züge du ausführst, sagt dir, was du ziehen sollst, und erklärt die Ide
   - Züge: „e4“, „Springer f3“, „Läufer schlägt c6“, „kurze Rochade“
   - Befehle: „erledigt“ / „ok“ (Zug ausgeführt), „Tipp“, „nochmal“, „zurück“, „stopp“
   - Alles andere ist eine Frage an den Trainer: „Warum spielt man hier c3?“
+- Wenn der Trainer fertig gesprochen hat, kommt ein kurzer **Ton** und „🟢 Du kannst jetzt
+  sprechen“ – du kannst jederzeit reden, ohne etwas anzutippen.
 - Der Trainer **spricht** alle Ansagen und Antworten laut aus (abschaltbar).
 - Fortschritt (fehlerfrei gespielte Varianten) wird lokal gespeichert.
 

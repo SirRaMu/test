@@ -42,6 +42,17 @@
     <button class="tab" data-filter="b">Mit Schwarz</button>
   </div>
   <div id="openingList" class="opening-list"></div>
+
+  <section class="card free-game">
+    <div>
+      <h2>♟️ Freie Partie gegen Claude</h2>
+      <p class="muted">Ohne festes Eröffnungsbuch: Du spielst am echten Brett, Claude sagt seine Züge an und kommentiert deine.</p>
+    </div>
+    <div class="row">
+      <button class="btn primary" id="btnFreeW">Ich spiele Weiß</button>
+      <button class="btn" id="btnFreeB">Ich spiele Schwarz</button>
+    </div>
+  </section>
 </main>
 
 <!-- ============ Eröffnungsdetails ============ -->
@@ -118,7 +129,8 @@
         <button class="btn" id="btnUndo">↩️ Zurück</button>
       </div>
       <div id="finishBox" class="finish" hidden>
-        <button class="btn primary" id="btnAgain">🔁 Nochmal</button>
+        <button class="btn primary" id="btnPlayOn">♟️ Weiterspielen gegen Claude</button>
+        <button class="btn" id="btnAgain">🔁 Nochmal</button>
         <button class="btn" id="btnNextLine">➡️ Nächste Variante</button>
         <button class="btn" id="btnQuiz">🧩 Jetzt abfragen</button>
         <button class="btn" id="btnSummary">🧠 Zusammenfassung</button>

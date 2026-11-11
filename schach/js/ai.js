@@ -173,20 +173,30 @@ export class Coach {
     this.history = [];
   }
 
-  /** Wenn der Gegner das Buch verlässt: Kommentar + Zugvorschlag. */
-  async adviseOutOfBook({ game, ctx, userSide }) {
+  /**
+   * Außerhalb des Eröffnungsbuchs:
+   *  role "advice":   Kommentar + bester Zug für den Nutzer (Vorschlag)
+   *  role "opponent": Claude spielt selbst die Gegenseite und kommentiert den letzten Zug des Nutzers
+   */
+  async playOrAdvise({ game, ctx, userSide, role = "advice" }) {
     const legal = game.moves({ verbose: true });
-    const side = userSide === "w" ? "Weiß" : "Schwarz";
+    const side = game.turn() === "w" ? "Weiß" : "Schwarz";
+    const user = userSide === "w" ? "Weiß" : "Schwarz";
+    const task =
+      role === "opponent"
+        ? `Du spielst jetzt selbst als Gegner ${side} gegen den Nutzer (${user}) am echten Brett. ` +
+          "Spiele einen guten, lehrreichen Zug wie ein starker Vereinsspieler – keine absichtlichen Fehler, aber auch keine unnötig komplizierten Züge. " +
+          "Schreibe in 'comment' 1–3 gesprochene Sätze: kurz, wie der letzte Zug des Nutzers war (ehrlich, mit Tipp falls schwach), und was du mit deinem Zug vorhast. " +
+          "Nenne deinen Zug im Kommentar NICHT, er wird separat angesagt. Gib in 'move' deinen Zug als SAN aus der Liste an."
+        : `Der Nutzer spielt ${user} und ist am Zug. Erkläre in 'comment' kurz (gesprochen, 2–4 Sätze), was der letzte Zug des Gegners bedeutet und welcher Plan jetzt sinnvoll ist. ` +
+          "Gib in 'move' den besten Zug für den Nutzer als SAN aus der Liste an.";
     const out = await this._create({
       system: this._systemCoach(ctx),
       effort: "medium",
-      maxTokens: 6000,
+      maxTokens: 8000,
       schema: {
         type: "object",
-        properties: {
-          comment: { type: "string" },
-          move: { type: "string" },
-        },
+        properties: { comment: { type: "string" }, move: { type: "string" } },
         required: ["comment", "move"],
         additionalProperties: false,
       },
@@ -194,15 +204,15 @@ export class Coach {
         {
           role: "user",
           content:
-            `Die Partie hat das einstudierte Eröffnungsbuch verlassen. Stellung (FEN): ${game.fen()}\n${game.ascii()}\n` +
+            `Stellung (FEN): ${game.fen()}\n${game.ascii()}\n` +
             `Bisherige Züge: ${game.history().join(" ")}\n` +
-            `Der Nutzer spielt ${side} und ist jetzt am Zug. Legale Züge: ${legal.map((m) => m.san).join(", ")}\n` +
-            "Erkläre in 'comment' kurz (gesprochen, 2–4 Sätze), was der letzte Zug des Gegners bedeutet und welcher Plan jetzt sinnvoll ist. " +
-            "Gib in 'move' den besten Zug für den Nutzer als SAN aus der Liste an.",
+            `Am Zug: ${side}. Legale Züge: ${legal.map((m) => m.san).join(", ")}\n` +
+            task,
         },
       ],
     });
-    const mv = legal.find((m) => m.san === out.move || m.san.replace(/[+#]/g, "") === String(out.move).replace(/[+#]/g, ""));
+    const norm = (x) => String(x).replace(/[+#!?]/g, "").trim();
+    const mv = legal.find((m) => norm(m.san) === norm(out.move));
     return { comment: out.comment || "", move: mv || null };
   }
 }

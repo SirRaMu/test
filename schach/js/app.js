@@ -45,6 +45,8 @@ const S = {
   detecting: false,
   recheck: false,
   advice: null, // Zugvorschlag von Claude außerhalb des Buchs
+  vsClaude: false, // Claude spielt nach dem Buch selbst die Gegenseite
+  claudeMove: null, // von Claude angesagter Zug, den der Nutzer ausführen soll
   pendingConfirm: null,
 };
 
@@ -153,7 +155,7 @@ function showScreen(name) {
   window.scrollTo(0, 0);
 }
 
-function startTraining(op, { lineIdx, mode, opp }) {
+function startTraining(op, { lineIdx, mode, opp, free = false }) {
   S.opening = op;
   S.randomLine = lineIdx === null;
   S.lineIdx = lineIdx === null ? Math.floor(Math.random() * op.lines.length) : lineIdx;
@@ -165,6 +167,13 @@ function startTraining(op, { lineIdx, mode, opp }) {
   keepAwake(true);
   board.setOrientation(op.side);
   resetGame();
+  if (free) {
+    S.vsClaude = true;
+    S.outOfBook = true;
+    sys(`Freie Partie gegen Claude – du spielst ${colorName(op.side)}`);
+    step(`Wir spielen eine freie Partie. Du hast ${op.side === "w" ? "Weiß und fängst an" : "Schwarz, ich fange an"}. Ich sage dir meine Züge an, du führst sie auf dem Brett für mich aus. Du kannst mich jederzeit etwas fragen.`);
+    return;
+  }
   sys(`${op.name} – ${line().name}. ${mode === "quiz" ? "Abfragemodus" : "Lernmodus"}, ${opp === "app" ? "der Trainer sagt die Gegnerzüge an" : "ein Mitspieler spielt frei"}.`);
   const intro =
     `Wir üben ${op.name}, ${line().name}. Du spielst ${colorName(op.side)}. ` +
@@ -179,6 +188,10 @@ function resetGame() {
   S.finished = false;
   S.mistakes = 0;
   S.advice = null;
+  S.claudeMove = null;
+  // Freie Partie (Variante ohne Buchzüge) bleibt eine Partie gegen Claude
+  S.vsClaude = !!S.opening && line().moves.length === 0;
+  S.outOfBook = S.vsClaude;
   S.pendingConfirm = null;
   $("finishBox").hidden = true;
   board.setHighlights({ last: null, hint: null });
@@ -188,9 +201,9 @@ function resetGame() {
 
 function updateHead() {
   $("trOpening").textContent = S.opening.name;
-  $("trLine").textContent = S.outOfBook ? `${line().name} → freies Spiel` : line().name;
+  $("trLine").textContent = S.vsClaude ? (line().moves.length ? `${line().name} → gegen Claude` : line().name) : S.outOfBook ? `${line().name} → freies Spiel` : line().name;
   const total = line().moves.length;
-  $("trProgress").style.width = `${Math.min(100, (ply() / total) * 100)}%`;
+  $("trProgress").style.width = total ? `${Math.min(100, (ply() / total) * 100)}%` : "100%";
   $("trScore").textContent = `Zug ${Math.floor(ply() / 2) + 1} · Fehler: ${S.mistakes}`;
 }
 
@@ -291,8 +304,41 @@ function moveSquares(san) {
 async function stepFree(prefix) {
   S.awaiting = true;
   camera.armed = settings.autoDetect && camera.running;
+  S.claudeMove = null;
+  board.setHighlights({ hint: null });
+
+  if (S.vsClaude) {
+    if (isUserTurn()) {
+      say("Du bist dran", "Spiel deinen Zug auf dem Brett. „Tipp“ gibt dir einen Vorschlag.", { extraSpeech: prefix, speakNote: false });
+      return;
+    }
+    if (!coach.ready) {
+      say("Claude braucht eine Verbindung", "Trag unter ⚙️ einen Claude-API-Schlüssel ein, damit Claude mitspielen kann.", { extraSpeech: prefix });
+      return;
+    }
+    say("Claude überlegt …", "", { extraSpeech: prefix, speakNote: false });
+    const fenAtAsk = S.game.fen();
+    try {
+      const r = await coach.playOrAdvise({ game: S.game, ctx: contextText(), userSide: userSide(), role: "opponent" });
+      if (S.game.fen() !== fenAtAsk) return;
+      if (!r.move) throw new Error("Claude hat keinen gültigen Zug geliefert – bitte „Nochmal“ antippen.");
+      S.claudeMove = r.move;
+      board.setHighlights({ hint: { from: r.move.from, to: r.move.to } });
+      if (r.comment) coachMsg(r.comment);
+      coachMsg(`➜ Ich spiele ${sanToGerman(r.move.san)}`);
+      say(`Ich spiele ${mvHtml(r.move.san)}`, r.comment, {
+        extraSpeech: r.comment,
+        speakNote: false,
+        tail: "Führe meinen Zug bitte auf dem Brett aus.",
+      });
+    } catch (e) {
+      showError(e);
+      say("Claude konnte nicht ziehen", "Tippe auf „🔁 Nochmal“, um es erneut zu versuchen.", { speakNote: false });
+    }
+    return;
+  }
+
   if (isUserTurn()) {
-    board.setHighlights({ hint: null });
     if (!coach.ready) {
       say("Freies Spiel – du bist dran", "Für Zugvorschläge außerhalb der Theorie trag einen Claude-API-Schlüssel ein.", { extraSpeech: prefix });
       return;
@@ -300,7 +346,7 @@ async function stepFree(prefix) {
     say("Freies Spiel – ich überlege …", "", { extraSpeech: prefix, speakNote: false });
     const fenAtAsk = S.game.fen();
     try {
-      const adv = await coach.adviseOutOfBook({ game: S.game, ctx: contextText(), userSide: userSide() });
+      const adv = await coach.playOrAdvise({ game: S.game, ctx: contextText(), userSide: userSide(), role: "advice" });
       if (S.game.fen() !== fenAtAsk) return; // inzwischen weitergespielt
       S.advice = adv.move;
       if (adv.move) board.setHighlights({ hint: { from: adv.move.from, to: adv.move.to } });
@@ -311,9 +357,18 @@ async function stepFree(prefix) {
       say("Freies Spiel – du bist dran", "");
     }
   } else {
-    board.setHighlights({ hint: null });
     say(`${colorName(S.game.turn())} ist am Zug`, "Spiel den Zug des Gegners auf dem Brett und bestätige ihn per Kamera, Antippen oder Sprache.", { extraSpeech: prefix });
   }
+}
+
+/** Nach der Eröffnung (oder von Anfang an) gegen Claude weiterspielen. */
+function playOnVsClaude() {
+  S.vsClaude = true;
+  S.outOfBook = true;
+  S.finished = false;
+  $("finishBox").hidden = true;
+  sys("Freie Partie gegen Claude");
+  step(S.game.history().length ? "Jetzt spielen wir die Partie zu Ende. Ich übernehme den Gegner." : "");
 }
 
 function finish(prefix) {
@@ -349,13 +404,22 @@ function handleMove(move, source) {
   if (source !== "camera") camera.resetBaseline();
 
   if (S.outOfBook) {
-    S.game.move(san);
-    board.setHighlights({ last: { from: move.from, to: move.to }, hint: null });
-    sys(`${colorName(move.color)}: ${sanToGerman(san)}`);
-    const good = S.advice && S.advice.san === san && move.color === userSide();
-    S.advice = null;
-    return step(good ? "Gut gespielt." : "");
+    if (S.vsClaude && !isUserTurn()) {
+      if (!S.claudeMove) return toast("Moment, Claude überlegt noch.");
+      if (san !== S.claudeMove.san) {
+        say(
+          `Erkannt: ${mvHtml(san)} – ich hatte ${mvHtml(S.claudeMove.san)} angesagt`,
+          "Bitte stell meinen Zug richtig auf. Oder übernimm den erkannten Zug unten.",
+          { bad: true },
+        );
+        S.pendingConfirm = move;
+        addConfirmButton(move, () => applyFree(move));
+        return;
+      }
+    }
+    return applyFree(move);
   }
+
 
   const exp = expected();
   const userMove = isUserTurn();
@@ -426,13 +490,13 @@ function leaveBook(move) {
   step(`Der Gegner hat mit ${sanToSpeech(move.san)} die Theorie verlassen. Ab jetzt spielen wir frei.`);
 }
 
-function addConfirmButton(move) {
+function addConfirmButton(move, onAccept = () => leaveBook(move)) {
   const b = document.createElement("button");
   b.className = "btn small";
   b.textContent = `Doch ${sanToGerman(move.san)} übernehmen`;
   b.addEventListener("click", () => {
     b.remove();
-    if (S.pendingConfirm === move) leaveBook(move);
+    if (S.pendingConfirm === move) onAccept();
   });
   const wrap = document.createElement("div");
   wrap.className = "msg sys";
@@ -441,11 +505,23 @@ function addConfirmButton(move) {
   $("chatLog").scrollTop = 1e9;
 }
 
+function applyFree(move) {
+  const san = move.san;
+  S.game.move(san);
+  board.setHighlights({ last: { from: move.from, to: move.to }, hint: null });
+  sys(`${colorName(move.color)}: ${sanToGerman(san)}`);
+  const good = S.advice && S.advice.san === san && move.color === userSide();
+  S.advice = null;
+  S.claudeMove = null;
+  return step(good ? "Gut gespielt." : "");
+}
+
 /** "Zug ausgeführt" – der erwartete Zug wurde auf dem Brett gemacht. */
 function confirmDone() {
   if (!S.awaiting) return;
   if (S.outOfBook) {
-    if (isUserTurn() && S.advice) return handleMove(S.advice, "button");
+    if (isUserTurn() && S.advice && !S.vsClaude) return handleMove(S.advice, "button");
+    if (!isUserTurn() && S.claudeMove) return handleMove(S.claudeMove, "button");
     toast("Im freien Spiel brauche ich den genauen Zug: per Kamera, Antippen oder Sprache.");
     return;
   }
@@ -463,6 +539,10 @@ function confirmDone() {
 function giveHint() {
   if (!S.awaiting) return;
   if (S.outOfBook) {
+    if (S.vsClaude && isUserTurn()) {
+      askHintVsClaude();
+      return;
+    }
     if (S.advice) speaker.speak(`Mein Vorschlag: ${sanToSpeech(S.advice.san)}`);
     return;
   }
@@ -482,6 +562,22 @@ function giveHint() {
   say(`Lösung: ${mvHtml(exp.san)}`, exp.note);
 }
 
+async function askHintVsClaude() {
+  if (!coach.ready) return toast("Für Tipps brauche ich eine Claude-Verbindung (⚙️).");
+  say("Ich schaue mir die Stellung an …", "", { speakNote: false });
+  const fen = S.game.fen();
+  try {
+    const adv = await coach.playOrAdvise({ game: S.game, ctx: contextText(), userSide: userSide(), role: "advice" });
+    if (S.game.fen() !== fen) return;
+    S.advice = adv.move;
+    if (adv.move) board.setHighlights({ hint: { from: adv.move.from, to: adv.move.to } });
+    coachMsg(adv.comment + (adv.move ? `\n➜ Vorschlag: ${sanToGerman(adv.move.san)}` : ""));
+    say(adv.move ? `Mein Tipp: ${mvHtml(adv.move.san)}` : "Du bist dran", adv.comment);
+  } catch (e) {
+    showError(e);
+  }
+}
+
 function undo() {
   if (S.game.history().length === 0) return;
   // Bis zum letzten eigenen Zug zurück (damit der Nutzer wieder am Zug ist)
@@ -489,7 +585,7 @@ function undo() {
   if (!isUserTurn() && S.game.history().length) S.game.undo();
   S.finished = false;
   $("finishBox").hidden = true;
-  if (S.outOfBook) {
+  if (S.outOfBook && !S.vsClaude) {
     const hist = S.game.history();
     S.outOfBook = !S.opening.lines.some((l) => hist.every((h, i) => l.moves[i]?.san === h));
     if (!S.outOfBook) S.lineIdx = S.opening.lines.findIndex((l) => hist.every((h, i) => l.moves[i]?.san === h));
@@ -632,8 +728,29 @@ function addAcceptDetected(move) {
 // ---------------------------------------------------------------------------
 // Sprache & Chat
 // ---------------------------------------------------------------------------
+// Kurzer Ton, sobald der Trainer fertig gesprochen hat und wieder zuhört
+let audioCtx = null;
+function beep() {
+  if (!audioCtx) return;
+  try {
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    o.frequency.value = 880;
+    g.gain.setValueAtTime(0.0001, audioCtx.currentTime);
+    g.gain.exponentialRampToValueAtTime(0.15, audioCtx.currentTime + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.18);
+    o.connect(g).connect(audioCtx.destination);
+    o.start();
+    o.stop(audioCtx.currentTime + 0.2);
+  } catch { /* egal */ }
+}
 speaker.onStart = () => listener.pause();
-speaker.onEnd = () => setTimeout(() => listener.resume(), 300);
+speaker.onEnd = () =>
+  setTimeout(() => {
+    if (!listener.active) return;
+    listener.resume();
+    beep();
+  }, 300);
 
 listener.onState = (st) => {
   const btn = $("btnMic");
@@ -643,8 +760,8 @@ listener.onState = (st) => {
     unsupported: "Spracheingabe wird von diesem Browser nicht unterstützt (Chrome oder Safari nutzen)",
     off: "Mikrofon aus – tippe zum Sprechen",
     paused: "Trainer spricht …",
-    listening: "Ich höre zu …",
-    starting: "Ich höre zu …",
+    listening: "🟢 Du kannst jetzt sprechen",
+    starting: "🟢 Du kannst jetzt sprechen",
     denied: "Mikrofon-Zugriff verweigert – in den Browser-Einstellungen erlauben",
   }[st] || st;
 };
@@ -657,10 +774,14 @@ listener.onState(listener.state);
 
 $("btnMic").addEventListener("click", () => {
   if (!listener.supported) return toast("Spracheingabe geht in diesem Browser nicht. Du kannst unten tippen.");
+  if (!audioCtx) {
+    try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch { /* kein Ton */ }
+  }
   if (listener.active) listener.stop();
   else {
     speaker.stop();
     listener.start();
+    beep();
   }
 });
 
@@ -746,7 +867,7 @@ function contextText() {
     `Bisher gespielt: ${movesTxt}`,
     `Aktuelle Stellung (FEN): ${g.fen()}`,
     `Am Zug: ${colorName(g.turn())}${isUserTurn() ? " (der Nutzer)" : " (der Gegner)"}`,
-    S.outOfBook ? "Die Partie hat das Eröffnungsbuch verlassen." : exp ? `Nächster Buchzug: ${exp.san}${exp.note ? ` – ${exp.note}` : ""}` : "Die Variante ist zu Ende gespielt.",
+    S.vsClaude ? "Freie Partie: Du (Claude) spielst selbst die Gegenseite." : S.outOfBook ? "Die Partie hat das Eröffnungsbuch verlassen." : exp ? `Nächster Buchzug: ${exp.san}${exp.note ? ` – ${exp.note}` : ""}` : "Die Variante ist zu Ende gespielt.",
     `Fehler bisher: ${S.mistakes}`,
   ].join("\n");
 }
@@ -784,7 +905,10 @@ function pick(a) {
 // Knöpfe
 $("btnDone").addEventListener("click", confirmDone);
 $("btnHint").addEventListener("click", giveHint);
-$("btnRepeat").addEventListener("click", () => speaker.speak(S.lastSpoken));
+$("btnRepeat").addEventListener("click", () => {
+  if (S.vsClaude && S.awaiting && !isUserTurn() && !S.claudeMove) return step();
+  speaker.speak(S.lastSpoken);
+});
 $("btnUndo").addEventListener("click", undo);
 $("btnWhy").addEventListener("click", () => {
   const exp = expected();
@@ -794,6 +918,16 @@ $("btnWhy").addEventListener("click", () => {
     : `Erkläre mir die Ideen hinter dem letzten Zug ${last || ""} und wie es in dieser Stellung typischerweise weitergeht.`;
   askCoach(S.mode === "quiz" && exp && isUserTurn() ? "Erkläre mir die aktuelle Stellung und worauf ich achten sollte, ohne den nächsten Zug zu verraten." : q);
 });
+$("btnPlayOn").addEventListener("click", playOnVsClaude);
+for (const [id, side] of [["btnFreeW", "w"], ["btnFreeB", "b"]]) {
+  $(id).addEventListener("click", () => {
+    const free = {
+      id: "frei-" + side, name: "Freie Partie gegen Claude", side, level: "", ideas: [],
+      summary: "Freie Partie ohne Eröffnungsbuch", lines: [{ name: side === "w" ? "Du spielst Weiß" : "Du spielst Schwarz", moves: [] }],
+    };
+    startTraining(free, { lineIdx: 0, mode: "learn", opp: "app", free: true });
+  });
+}
 $("btnAgain").addEventListener("click", () => { resetGame(); step("Noch einmal von vorne."); });
 $("btnNextLine").addEventListener("click", () => {
   S.lineIdx = S.randomLine ? Math.floor(Math.random() * S.opening.lines.length) : (S.lineIdx + 1) % S.opening.lines.length;
