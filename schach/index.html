@@ -5,7 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#1f2a24">
 <title>Eröffnungstrainer</title>
-<link rel="stylesheet" href="style.css?v=1.0.0">
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
 
@@ -107,6 +108,7 @@
         <button class="btn small" id="btnCamSwitch">🔄 Wechseln</button>
         <button class="btn small" id="btnDetect">📸 Zug prüfen</button>
       </div>
+      <input type="file" id="photoInput" accept="image/*" capture="environment" hidden>
     </section>
 
     <section class="board-wrap">
@@ -161,6 +163,8 @@
     <h2>⚙️ Einstellungen</h2>
 
     <h3>Claude-Verbindung</h3>
+    <p id="accountInfo" class="account-ok" hidden>✅ Verbunden über dein Claude-Konto – es läuft über dein Abo, kein API-Schlüssel nötig.</p>
+    <div id="keySection">
     <label class="field">API-Schlüssel
       <div class="row">
         <input id="setKey" type="password" placeholder="sk-ant-…" autocomplete="off" spellcheck="false">
@@ -174,6 +178,7 @@
     <div class="row">
       <button type="button" class="btn small" id="btnTestKey">Verbindung testen</button>
       <span id="testResult" class="small"></span>
+    </div>
     </div>
 
     <h3>Kamera</h3>
@@ -201,6 +206,6 @@
 
 <div id="toast" class="toast" hidden></div>
 
-<script type="module" src="js/app.js?v=1.0.0"></script>
+<script type="module" src="js/app.js"></script>
 </body>
 </html>

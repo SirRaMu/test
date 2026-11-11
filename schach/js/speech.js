@@ -50,8 +50,26 @@ export class Speaker {
     }
   }
 
+  /** Claudes eigene Stimme verwenden (nur auf claude.ai verfügbar). */
+  useClaudeVoice(t) {
+    this.ctts = t;
+    this.supported = true;
+    t.onState(({ state }) => {
+      if (state === "speaking" || state === "starting") this.onStart();
+      else if (state === "idle") this.onEnd();
+    });
+  }
+
   speak(text) {
     if (!this.supported || !this.enabled || !text) return Promise.resolve();
+    if (this.ctts) {
+      const clean = text.replace(/[*_#`>…]/g, "").replace(/\bO-O-O\b/g, "lange Rochade").replace(/\bO-O\b/g, "kurze Rochade").slice(0, 1900);
+      const opts = { language: "de", rate: Math.min(1.5, Math.max(0.7, this.rate)) };
+      // "busy": das Diktat beendet sich gerade noch – kurz warten und nochmal
+      return this.ctts.speak(clean, opts).catch((e) =>
+        e?.code === "busy" ? new Promise((r) => setTimeout(r, 700)).then(() => this.ctts.speak(clean, opts)).catch(() => {}) : undefined,
+      );
+    }
     // Markdown und Sonderzeichen entfernen, Notation vorlesbar machen
     const clean = text
       .replace(/[*_#`>]/g, "")
@@ -74,11 +92,13 @@ export class Speaker {
   }
 
   stop() {
-    if (this.supported) speechSynthesis.cancel();
+    if (this.ctts) this.ctts.stop().catch(() => {});
+    else if (this.supported) speechSynthesis.cancel();
     this.onEnd();
   }
 
   get speaking() {
+    if (this.ctts) return this.ctts.active();
     return this.supported && speechSynthesis.speaking;
   }
 }
@@ -125,7 +145,35 @@ export class Listener {
     };
   }
 
+  /**
+   * Claudes Diktierfunktion verwenden (auf claude.ai). Sie muss bei jedem Sprechen per
+   * Antippen gestartet werden; nach dem ersten erkannten Satz stoppt sie automatisch.
+   */
+  useClaudeDictation(d) {
+    this.dict = d;
+    this.supported = true;
+    this.pushToTalk = true;
+    this.dictState = "idle";
+    d.onPartial(({ text }) => this.onPartial(text));
+    d.onFinal(({ text }) => {
+      const t = text.trim();
+      if (!t) return;
+      d.stop().catch(() => {});
+      this.onFinal(t);
+    });
+    d.onState(({ state, reason }) => {
+      this.dictState = state;
+      if (state === "idle") this.active = false;
+      if (reason === "not_granted") return this.onState("denied");
+      this.onState(this.state);
+    });
+  }
+
   get state() {
+    if (this.dict) {
+      if (this.dictState === "idle") return this.active ? "starting" : "tap";
+      return this.dictState === "finishing" ? "starting" : "listening";
+    }
     if (!this.supported) return "unsupported";
     if (!this.active) return "off";
     if (this.paused) return "paused";
@@ -138,6 +186,16 @@ export class Listener {
   }
 
   start() {
+    if (this.dict) {
+      // Muss direkt im Klick passieren – nichts davor awaiten
+      this.active = true;
+      this.dict.start({ language: "de-DE" }).catch((e) => {
+        this.active = false;
+        this.onState(e?.code === "not_granted" ? "denied" : this.state);
+      });
+      this.onState(this.state);
+      return;
+    }
     if (!this.supported) return;
     this.active = true;
     this.paused = false;
@@ -147,11 +205,13 @@ export class Listener {
 
   stop() {
     this.active = false;
+    if (this.dict) this.dict.stop().catch(() => {});
     try { this.rec?.stop(); } catch { /* egal */ }
     this.onState(this.state);
   }
 
   pause() {
+    if (this.dict) return; // Diktat läuft nur auf Knopfdruck
     if (!this.active) return;
     this.paused = true;
     try { this.rec?.abort(); } catch { /* egal */ }
@@ -159,6 +219,7 @@ export class Listener {
   }
 
   resume() {
+    if (this.dict) return;
     if (!this.active) return;
     this.paused = false;
     this._start();

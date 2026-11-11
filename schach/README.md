@@ -31,7 +31,21 @@ welche Züge du ausführst, sagt dir, was du ziehen sollst, und erklärt die Ide
 - Der Trainer **spricht** alle Ansagen und Antworten laut aus (abschaltbar).
 - Fortschritt (fehlerfrei gespielte Varianten) wird lokal gespeichert.
 
-## Einrichtung
+## Zwei Wege, die App zu nutzen
+
+| | Über dein Claude-Abo (claude.ai) | Mit API-Schlüssel (GitHub Pages) |
+|---|---|---|
+| Kosten | über dein Claude-Konto, nichts extra | ca. 1–2 Cent pro erkanntem Zug |
+| Kamera | Foto pro Zug (📸-Knopf) | Live: Handy hinstellen, erkennt Züge selbst |
+| Sprechen | Mikrofon antippen, dann sprechen | Dauerhaft zuhören |
+| Stimme | Claudes Stimme (im Chrome-Browser) | Browser-Stimme |
+
+Die App erkennt selbst, wo sie läuft. Auf claude.ai nutzt sie automatisch dein Konto
+(Claude fragt einmal um Erlaubnis); Live-Kamera und Dauer-Mikrofon sind dort aus
+Sicherheitsgründen gesperrt. Am besten öffnest du den claude.ai-Link in **Chrome**
+(Android) – in der Claude-App fehlen Spracheingabe und -ausgabe.
+
+## Einrichtung (API-Schlüssel-Variante)
 
 1. **Claude-API-Schlüssel besorgen** auf <https://console.anthropic.com/settings/keys>
    (braucht ein Anthropic-Konto mit etwas Guthaben). In der App unter ⚙️ eintragen,

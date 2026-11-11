@@ -45,6 +45,7 @@ const S = {
   detecting: false,
   recheck: false,
   advice: null, // Zugvorschlag von Claude außerhalb des Buchs
+  photoMode: false, // auf claude.ai: keine Live-Kamera, stattdessen Foto pro Zug
   vsClaude: false, // Claude spielt nach dem Buch selbst die Gegenseite
   claudeMove: null, // von Claude angesagter Zug, den der Nutzer ausführen soll
   pendingConfirm: null,
@@ -62,7 +63,7 @@ const colorName = (c) => (c === "w" ? "Weiß" : "Schwarz");
 // ---------------------------------------------------------------------------
 let filter = "all";
 function renderMenu() {
-  $("setupHint").hidden = !!settings.apiKey;
+  $("setupHint").hidden = coach.ready;
   const list = $("openingList");
   list.innerHTML = "";
   for (const op of OPENINGS) {
@@ -151,7 +152,7 @@ function showScreen(name) {
   $("screenMenu").hidden = name !== "menu";
   $("screenTrain").hidden = name !== "train";
   $("btnBack").hidden = name !== "train";
-  $("topSub").textContent = name === "train" ? "Training läuft" : "mit Claude, Kamera & Sprache";
+  $("topSub").textContent = name === "train" ? "Training läuft" : coach.viaAccount ? "läuft über dein Claude-Konto" : "mit Claude, Kamera & Sprache";
   window.scrollTo(0, 0);
 }
 
@@ -613,6 +614,7 @@ function camStatus(text, cls = "") {
 }
 
 async function startCamera() {
+  if (S.photoMode) return $("photoInput").click();
   try {
     await camera.start();
     $("camOff").hidden = true;
@@ -631,13 +633,51 @@ function stopCamera() {
 }
 
 $("btnCam").addEventListener("click", startCamera);
-$("btnCamToggle").addEventListener("click", () => (camera.running ? stopCamera() : startCamera()));
+$("btnCamToggle").addEventListener("click", () => (S.photoMode ? $("photoInput").click() : camera.running ? stopCamera() : startCamera()));
 $("btnCamSwitch").addEventListener("click", () => camera.switchCamera().catch((e) => toast(e.message)));
 $("btnDetect").addEventListener("click", async () => {
-  if (!camera.running) return toast("Erst die Kamera starten.");
+  if (S.photoMode || !camera.running) return $("photoInput").click();
   const after = await camera.capture();
   runDetection(camera.baseline, after, true);
 });
+
+// Foto vom Brett (Kamera-App des Handys) – wird mit der bekannten Stellung verglichen
+$("photoInput").addEventListener("change", async () => {
+  const file = $("photoInput").files?.[0];
+  $("photoInput").value = "";
+  if (!file) return;
+  if (!S.awaiting) return toast("Gerade wird kein Zug erwartet.");
+  try {
+    const img = await toJpeg(file);
+    showPhoto(img);
+    runDetection(null, img, true);
+  } catch {
+    toast("Das Foto konnte nicht gelesen werden.");
+  }
+});
+
+async function toJpeg(file, maxSide = 1280) {
+  const bmp = await createImageBitmap(file);
+  const scale = Math.min(1, maxSide / Math.max(bmp.width, bmp.height));
+  const c = document.createElement("canvas");
+  c.width = Math.round(bmp.width * scale);
+  c.height = Math.round(bmp.height * scale);
+  c.getContext("2d").drawImage(bmp, 0, 0, c.width, c.height);
+  return await new Promise((r) => c.toBlob(r, "image/jpeg", 0.85));
+}
+
+function showPhoto(blob) {
+  const v = $("camView");
+  let img = v.querySelector("img.photo");
+  if (!img) {
+    img = document.createElement("img");
+    img.className = "photo";
+    v.prepend(img);
+  }
+  if (img.src) URL.revokeObjectURL(img.src);
+  img.src = URL.createObjectURL(blob);
+  $("camOff").hidden = true;
+}
 
 camera.onMotion = (lvl) => {
   $("motionBar").style.width = `${Math.min(100, lvl * 800)}%`;
@@ -651,9 +691,9 @@ camera.onStateChange = (st) => {
 camera.onStable = (before, after) => runDetection(before, after, false);
 
 async function runDetection(before, after, manual) {
-  if (!coach.ready) {
-    if (manual) toast("Für die Kamera-Erkennung bitte einen Claude-API-Schlüssel eintragen (⚙️).");
-    camera.baseline = after;
+  if (!coach.ready || !coach.canSeeImages) {
+    if (manual) toast(coach.ready ? "Bilder können hier nicht an Claude geschickt werden." : "Für die Kamera-Erkennung bitte einen Claude-API-Schlüssel eintragen (⚙️).");
+    if (!S.photoMode) camera.baseline = after;
     return;
   }
   if (!S.awaiting) {
@@ -697,7 +737,7 @@ async function runDetection(before, after, manual) {
     showError(e);
   } finally {
     S.detecting = false;
-    camStatus(camera.running ? "bereit" : "aus", camera.running ? "ok" : "");
+    camStatus(S.photoMode ? "Foto-Modus" : camera.running ? "bereit" : "aus", camera.running || S.photoMode ? "ok" : "");
     if (S.recheck && camera.running) {
       S.recheck = false;
       const fresh = await camera.capture();
@@ -762,7 +802,8 @@ listener.onState = (st) => {
     paused: "Trainer spricht …",
     listening: "🟢 Du kannst jetzt sprechen",
     starting: "🟢 Du kannst jetzt sprechen",
-    denied: "Mikrofon-Zugriff verweigert – in den Browser-Einstellungen erlauben",
+    denied: "Mikrofon-Zugriff verweigert – in den Einstellungen erlauben",
+    tap: "🎤 Tippe aufs Mikrofon und sprich",
   }[st] || st;
 };
 listener.onPartial = (t) => ($("micPartial").textContent = t);
@@ -964,6 +1005,8 @@ function openSettings() {
   $("setRate").value = settings.rate;
   $("setNotes").checked = settings.notes;
   $("testResult").textContent = "";
+  $("accountInfo").hidden = !coach.viaAccount;
+  $("keySection").hidden = coach.viaAccount;
   if (!$("dlgSettings").open) $("dlgSettings").showModal();
 }
 
@@ -1009,6 +1052,30 @@ $("dlgSettings").addEventListener("close", () => {
 // ---------------------------------------------------------------------------
 renderMenu();
 showScreen("menu");
+initClaudeAccount();
+
+/** Läuft die App als Artifact auf claude.ai, nutzt sie das Claude-Konto (Abo) des Nutzers. */
+async function initClaudeAccount() {
+  if (!window.claude?.use) return;
+  S.photoMode = true; // Live-Kamera und Dauer-Mikrofon sind auf claude.ai nicht erlaubt
+  $("camOff").querySelector("p").textContent = "📸 Mach pro Zug ein Foto vom Brett";
+  $("btnCam").textContent = "Foto aufnehmen";
+  $("btnCamToggle").textContent = "📸 Foto";
+  $("btnCamSwitch").hidden = true;
+  camStatus("Foto-Modus", "ok");
+  const [ok, tts, dict] = await Promise.all([
+    coach.initAccount(),
+    window.claude.use("tts").catch(() => null),
+    window.claude.use("dictation").catch(() => null),
+  ]);
+  if (tts) speaker.useClaudeVoice(tts);
+  if (dict) listener.useClaudeDictation(dict);
+  listener.onState(listener.state);
+  if (ok) {
+    $("topSub").textContent = "läuft über dein Claude-Konto";
+    renderMenu();
+  }
+}
 if (!window.isSecureContext) {
   toast("Hinweis: Kamera und Mikrofon funktionieren nur über https:// oder localhost.");
 }

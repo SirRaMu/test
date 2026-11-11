@@ -24,10 +24,38 @@ export class Coach {
     this.model = MODELS[0].id;
     this.client = null;
     this.history = []; // Gesprächsverlauf für Fragen
+    this.sample = null; // Claude über das eigene claude.ai-Konto (wenn die App als Artifact läuft)
+    this.canImages = false;
+  }
+
+  /** Auf claude.ai: Zugang über das Claude-Konto des Nutzers holen. */
+  async initAccount() {
+    if (!window.claude?.use) return false;
+    try {
+      const s = await window.claude.use("sample");
+      if (!s) return false;
+      this.sample = s;
+      try {
+        const lim = await s.limits();
+        this.canImages = !!lim?.images;
+      } catch { /* unbekannt */ }
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** true, wenn über das Claude-Konto (Abo) statt über einen API-Schlüssel abgerechnet wird. */
+  get viaAccount() {
+    return !!this.sample;
   }
 
   get ready() {
-    return !!this.apiKey;
+    return !!this.sample || !!this.apiKey;
+  }
+
+  get canSeeImages() {
+    return this.sample ? this.canImages : !!this.apiKey;
   }
 
   configure({ apiKey, model }) {
@@ -47,8 +75,35 @@ export class Coach {
     return this.client;
   }
 
+  /** Ein Aufruf über das Claude-Konto (claude.ai). */
+  async _createViaAccount({ system, messages, schema, images }) {
+    const turns = messages.map((m) => ({ role: m.role, content: String(m.content) }));
+    turns[0] = { role: "user", content: `${system}\n\n---\n\n${turns[0].content}` };
+    const opts = { cache: false };
+    if (images?.length) opts.images = images;
+    try {
+      if (!schema) return ((await this.sample(turns, opts)).text || "").trim();
+      const keys = Object.keys(schema.properties).map((k) => `"${k}"`).join(", ");
+      turns[turns.length - 1].content += `\n\nAntworte ausschließlich mit einem einzigen JSON-Objekt mit den Schlüsseln ${keys}, ohne weiteren Text.`;
+      return await this.sample.json(turns, opts);
+    } catch (e) {
+      throw translateAccountError(e);
+    }
+  }
+
   /** Ein Aufruf mit Fehlerbehandlung, Refusal-Fallback und optionalem JSON-Schema. */
-  async _create({ system, messages, effort = "low", schema = null, maxTokens = 4000 }) {
+  async _create({ system, messages, effort = "low", schema = null, maxTokens = 4000, images = null, imageLabels = [] }) {
+    if (this.sample) return this._createViaAccount({ system, messages, schema, images });
+    if (images?.length) {
+      // Bilder als Content-Blöcke vor den Text der letzten Nutzernachricht setzen
+      const blocks = [];
+      for (const [i, img] of images.entries()) {
+        if (imageLabels[i]) blocks.push({ type: "text", text: imageLabels[i] });
+        blocks.push({ type: "image", source: { type: "base64", media_type: "image/jpeg", data: await blobToBase64(img) } });
+      }
+      const last = messages[messages.length - 1];
+      messages = [...messages.slice(0, -1), { role: last.role, content: [...blocks, { type: "text", text: String(last.content) }] }];
+    }
     const client = await this._client();
     const { default: Anthropic } = await loadSdk();
     // Server-seitiger Fallback, falls ein Modell eine Anfrage ablehnt (nur Opus/Sonnet)
@@ -92,14 +147,15 @@ export class Coach {
     const legal = game.moves({ verbose: true });
     const legalList = legal.map((m) => `${m.san} (${m.from}-${m.to})`).join(", ");
     const turn = game.turn() === "w" ? "Weiß" : "Schwarz";
-    const [b64Before, b64After] = await Promise.all([blobToBase64(before), blobToBase64(after)]);
+    const two = !!before;
 
     const system =
-      "Du wertest Fotos eines echten Schachbretts aus. Du bekommst ein Foto VOR und ein Foto NACH einem möglichen Zug " +
-      "sowie die exakte Stellung vor dem Zug. Bestimme, welcher der legalen Züge ausgeführt wurde, indem du vergleichst, " +
-      "welche Felder sich verändert haben (Figur verschwunden / neu erschienen). Hände, Arme oder Schatten im Bild sind kein Zug. " +
-      "Wenn im NACH-Bild noch eine Hand über dem Brett ist, das Brett verdeckt ist oder sich keine Figur bewegt hat, antworte mit move = \"none\". " +
-      "Antworte ausschließlich im geforderten JSON-Format.";
+      "Du wertest Fotos eines echten Schachbretts aus. " +
+      (two
+        ? "Das erste Bild zeigt das Brett VOR, das zweite NACH einem möglichen Zug. Vergleiche, welche Felder sich verändert haben (Figur verschwunden / neu erschienen). "
+        : "Das Bild zeigt das Brett NACH einem möglichen Zug. Vergleiche das Foto mit der angegebenen Stellung vor dem Zug und finde heraus, welche Felder sich verändert haben. ") +
+      "Bestimme, welcher der legalen Züge ausgeführt wurde. Hände, Arme oder Schatten im Bild sind kein Zug. " +
+      "Wenn eine Hand über dem Brett ist, das Brett verdeckt ist oder sich keine Figur bewegt hat, antworte mit move = \"none\".";
 
     const text =
       `Stellung VOR dem Zug (FEN): ${game.fen()}\n` +
@@ -125,21 +181,13 @@ export class Coach {
         required: ["move", "confidence", "observation"],
         additionalProperties: false,
       },
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "text", text: "Foto VORHER:" },
-            { type: "image", source: { type: "base64", media_type: "image/jpeg", data: b64Before } },
-            { type: "text", text: "Foto NACHHER:" },
-            { type: "image", source: { type: "base64", media_type: "image/jpeg", data: b64After } },
-            { type: "text", text },
-          ],
-        },
-      ],
+      images: two ? [before, after] : [after],
+      imageLabels: two ? ["Foto VORHER:", "Foto NACHHER:"] : ["Foto NACH dem Zug:"],
+      messages: [{ role: "user", content: text }],
     });
-    const mv = legal.find((m) => m.san === out.move || m.san.replace(/[+#]/g, "") === String(out.move).replace(/[+#]/g, ""));
-    return { move: mv || null, confidence: Number(out.confidence) || 0, observation: out.observation || "" };
+    const norm = (x) => String(x).replace(/[+#!?]/g, "").trim();
+    const mv = legal.find((m) => norm(m.san) === norm(out?.move));
+    return { move: mv || null, confidence: Number(out?.confidence) || 0, observation: out?.observation || "" };
   }
 
   _systemCoach(ctx) {
@@ -222,6 +270,23 @@ export class CoachError extends Error {
     super(message);
     this.code = code;
   }
+}
+
+function translateAccountError(e) {
+  const code = e?.code || "unknown";
+  const msg = {
+    not_granted: "Du hast der Seite den Zugriff auf Claude nicht erlaubt. Über das Menü der Seite (Berechtigungen) kannst du es erlauben.",
+    rate_limited: "Dein Claude-Nutzungslimit ist gerade erreicht oder es kamen zu viele Anfragen – bitte kurz warten.",
+    images_unavailable: "Bilder können hier nicht an Claude geschickt werden.",
+    image_rejected: "Das Foto konnte nicht verarbeitet werden – bitte nochmal aufnehmen.",
+    sampling_disabled: "Claude-Anfragen aus Artifacts sind für dein Konto ausgeschaltet.",
+    capability_disabled: "Claude-Anfragen aus Artifacts sind für dein Konto ausgeschaltet.",
+    session_expired: "Deine Claude-Sitzung ist abgelaufen – bitte Seite neu laden.",
+    refused: "Claude hat diese Anfrage abgelehnt.",
+    invalid_json: "Die Antwort von Claude war nicht lesbar – bitte nochmal versuchen.",
+    cancelled: "Abgebrochen.",
+  }[code];
+  return new CoachError(code === "not_granted" ? "not_granted" : code, msg || e?.message || "Fehler bei der Anfrage an Claude.");
 }
 
 function translateError(e, Anthropic) {

@@ -22,7 +22,6 @@ body {
   color: var(--text);
   font: 16px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   -webkit-tap-highlight-color: transparent;
-  padding-bottom: env(safe-area-inset-bottom);
 }
 a { color: var(--accent); }
 h1, h2, h3 { margin: 0; line-height: 1.2; }
@@ -33,10 +32,13 @@ h3 { font-size: .95rem; color: var(--muted); text-transform: uppercase; letter-s
 [hidden] { display: none !important; }
 
 /* ---------- Kopfzeile ---------- */
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--bg); }
 .top {
-  position: sticky; top: 0; z-index: 10;
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 10;
   display: flex; align-items: center; gap: 10px;
-  padding: calc(10px + env(safe-area-inset-top)) 16px 10px;
+  padding-block: 10px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
   background: rgba(20, 26, 23, .92);
   backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--line);
@@ -51,7 +53,7 @@ h3 { font-size: .95rem; color: var(--muted); text-transform: uppercase; letter-s
 }
 
 /* ---------- Allgemeine Elemente ---------- */
-.screen { max-width: 1200px; margin: 0 auto; padding: 16px; }
+.screen { max-width: 1200px; margin: 0 auto; padding-block: 16px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; }
 .btn {
   appearance: none; border: 1px solid var(--line); background: var(--panel-2); color: var(--text);
@@ -80,6 +82,7 @@ h3 { font-size: .95rem; color: var(--muted); text-transform: uppercase; letter-s
 .op-card p { margin: 0; color: var(--muted); font-size: .9rem; }
 .op-card .prog { font-size: .8rem; color: var(--accent); }
 
+.account-ok { margin: 4px 0 8px; padding: 10px 12px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--accent); }
 .free-game { margin-top: 16px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
 .free-game > div:first-child { flex: 1 1 280px; min-width: 0; }
 .free-game p { margin: 6px 0 0; }
@@ -139,6 +142,7 @@ dialog.sheet::backdrop { background: rgba(0, 0, 0, .6); }
 .cam { padding: 10px; }
 .cam-view { position: relative; aspect-ratio: 4 / 3; background: #000; border-radius: 10px; overflow: hidden; }
 .cam-view video { width: 100%; height: 100%; object-fit: cover; display: block; }
+.cam-view img.photo { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; background: #000; }
 .cam-off { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; background: #0b0f0d; }
 .cam-off p { margin: 0; color: var(--muted); }
 .pill { position: absolute; top: 8px; left: 8px; padding: 3px 10px; border-radius: 99px; background: rgba(0, 0, 0, .65); font-size: .8rem; font-weight: 600; }
