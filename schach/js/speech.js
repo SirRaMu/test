@@ -97,6 +97,15 @@ export class Speaker {
     this.onEnd();
   }
 
+  /** Wartet, bis gerade nichts mehr gesprochen wird (höchstens 25 s). */
+  whenIdle() {
+    return new Promise((resolve) => {
+      const t0 = Date.now();
+      const check = () => (!this.speaking || Date.now() - t0 > 25000 ? resolve() : setTimeout(check, 250));
+      setTimeout(check, 150);
+    });
+  }
+
   get speaking() {
     if (this.ctts) return this.ctts.active();
     return this.supported && speechSynthesis.speaking;

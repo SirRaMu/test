@@ -29,6 +29,16 @@ welche Züge du ausführst, sagt dir, was du ziehen sollst, und erklärt die Ide
 - Wenn der Trainer fertig gesprochen hat, kommt ein kurzer **Ton** und „🟢 Du kannst jetzt
   sprechen“ – du kannst jederzeit reden, ohne etwas anzutippen.
 - Der Trainer **spricht** alle Ansagen und Antworten laut aus (abschaltbar).
+- **Digitales Brett:** Figuren per Finger, Maus oder Stift ziehen oder antippen; Züge
+  gleiten animiert, farbige Pfeile zeigen deinen Zug (grün), den Gegnerzug (orange) und
+  Claudes Vorschläge (blau); bei der Bauernumwandlung wählst du die Figur.
+- **Zugfolge & Erklärungen:** Jeder Zug mit Erklärung zum Antippen, dazu ◀ ▶ zum
+  Durchblättern der ganzen Variante. Machst du einen Fehler, erklärt Claude, warum
+  der Theoriezug besser ist.
+- **Passt sich dem Gerät an:** Handy (eine Spalte), iPad hochkant (Brett + Seitenleiste),
+  iPad quer / Laptop (Brett so groß wie möglich) und PC (Zugliste – Brett – Trainer).
+  Am PC gibt es Tastenkürzel (Leertaste, T, W, N, Z, ←/→, M) und Fotos lassen sich
+  per Drag & Drop auf die Kamera-Fläche ziehen.
 - Fortschritt (fehlerfrei gespielte Varianten) wird lokal gespeichert.
 
 ## Zwei Wege, die App zu nutzen
@@ -74,5 +84,6 @@ Fragen an Claude brauchen den Schlüssel.
   Standardmodell `claude-opus-5-5`; mit serverseitigem Fallback, falls ein Modell
   eine Anfrage ablehnt.
 - Sprache: Web Speech API (Spracherkennung und Sprachausgabe des Browsers).
+- claude.ai-Version bauen: `python3 schach/tools/build-artifact.py ZIELORDNER`
 - Tests: `node schach/tests/validate-openings.mjs` (prüft alle Varianten auf legale Züge)
   und `node schach/tests/speech-parse.mjs` (deutscher Zug-Parser).

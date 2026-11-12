@@ -217,6 +217,26 @@ export class Coach {
     }
   }
 
+  /** Kurze Erklärung, warum ein Zug schlechter ist als der Buchzug (2–3 gesprochene Sätze). */
+  async explainMistake({ game, wrong, right, note, ctx }) {
+    return this._create({
+      system: this._systemCoach(ctx),
+      effort: "low",
+      maxTokens: 3000,
+      messages: [
+        {
+          role: "user",
+          content:
+            `Stellung (FEN): ${game.fen()}\n${game.ascii()}\n` +
+            `Der Nutzer wollte hier ${wrong} spielen, die Theorie spielt ${right}${note ? ` (Idee: ${note})` : ""}.\n` +
+            "Erkläre in zwei bis drei kurzen gesprochenen Sätzen konkret, was an seinem Zug schlechter ist " +
+            "(z. B. welche Figur hängt, was der Gegner dann spielen kann, welcher Plan verloren geht) und warum der Theoriezug besser ist. " +
+            "Wenn sein Zug auch gut spielbar ist, sag das ehrlich und erkläre den Unterschied.",
+        },
+      ],
+    });
+  }
+
   resetConversation() {
     this.history = [];
   }

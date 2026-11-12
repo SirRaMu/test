@@ -112,7 +112,33 @@
     </section>
 
     <section class="board-wrap">
-      <div id="board" class="board" aria-label="Schachbrett"></div>
+      <div id="reviewBanner" class="review-banner" hidden>
+        <span id="reviewText">Ansicht</span>
+        <button class="btn small primary" id="btnLive">Zurück zur Partie</button>
+      </div>
+      <div id="board" aria-label="Schachbrett"></div>
+      <div class="board-legend">
+        <span><i style="background: var(--arrow-you)"></i>dein Zug</span>
+        <span><i style="background: var(--arrow-opp)"></i>Gegner</span>
+        <span><i style="background: var(--arrow-claude)"></i>Claudes Vorschlag</span>
+        <span>Figur ziehen oder antippen</span>
+      </div>
+    </section>
+
+    <section class="moves card">
+      <h3>Zugfolge &amp; Erklärungen</h3>
+      <div id="moveList" class="move-list"></div>
+      <div id="moveNote" class="move-note"></div>
+      <div class="review-nav">
+        <button class="btn" id="btnFirst" aria-label="Zum Anfang">⏮</button>
+        <button class="btn" id="btnPrev" aria-label="Einen Zug zurück">◀</button>
+        <button class="btn" id="btnNext" aria-label="Einen Zug vor">▶</button>
+        <button class="btn" id="btnLast" aria-label="Zur aktuellen Stellung">⏭</button>
+      </div>
+      <div class="kbd-help">
+        Tasten: <kbd>Leertaste</kbd> Zug ausgeführt · <kbd>T</kbd> Tipp · <kbd>W</kbd> Warum? ·
+        <kbd>N</kbd> Nochmal · <kbd>Z</kbd> Zurück · <kbd>←</kbd><kbd>→</kbd> Züge ansehen · <kbd>M</kbd> Mikrofon
+      </div>
     </section>
 
     <section class="coach card">
@@ -197,6 +223,8 @@
     <label class="check"><input type="checkbox" id="setVoice" checked> Trainer spricht laut</label>
     <label class="field">Sprechtempo <input type="range" id="setRate" min="0.7" max="1.4" step="0.05" value="1.05"></label>
     <label class="check"><input type="checkbox" id="setNotes" checked> Erklärung zu jedem Zug vorlesen</label>
+    <label class="check"><input type="checkbox" id="setExplainMistakes" checked> Bei Fehlern von Claude erklären lassen, warum</label>
+    <label class="check"><input type="checkbox" id="setShowFuture" checked> Im Lernmodus die ganze Variante in der Zugliste zeigen</label>
 
     <div class="sheet-actions">
       <button class="btn primary" value="save">Speichern</button>

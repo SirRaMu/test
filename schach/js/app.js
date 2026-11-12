@@ -15,7 +15,7 @@ const store = {
 // Zustand
 // ---------------------------------------------------------------------------
 const settings = Object.assign(
-  { apiKey: "", model: MODELS[0].id, voice: true, rate: 1.05, perspective: "von der Seite von Weiß (Weiß unten im Bild)", autoDetect: true, notes: true },
+  { apiKey: "", model: MODELS[0].id, voice: true, rate: 1.05, perspective: "von der Seite von Weiß (Weiß unten im Bild)", autoDetect: true, notes: true, explainMistakes: true, showFuture: true },
   store.get("schach.settings", {}),
 );
 const progress = store.get("schach.progress", {}); // {openingId: {lineIdx: {runs, perfect}}}
@@ -45,6 +45,8 @@ const S = {
   detecting: false,
   recheck: false,
   advice: null, // Zugvorschlag von Claude außerhalb des Buchs
+  view: null, // Durchblättern: angezeigter Halbzug (null = aktuelle Stellung)
+  freeNotes: {}, // Claudes Kommentare zu Zügen außerhalb des Buchs (Halbzug -> Text)
   photoMode: false, // auf claude.ai: keine Live-Kamera, stattdessen Foto pro Zug
   vsClaude: false, // Claude spielt nach dem Buch selbst die Gegenseite
   claudeMove: null, // von Claude angesagter Zug, den der Nutzer ausführen soll
@@ -194,6 +196,11 @@ function resetGame() {
   S.vsClaude = !!S.opening && line().moves.length === 0;
   S.outOfBook = S.vsClaude;
   S.pendingConfirm = null;
+  S.freeNotes = {};
+  S.view = null;
+  board.interactive = true;
+  board.setArrows([]);
+  $("reviewBanner").hidden = true;
   $("finishBox").hidden = true;
   board.setHighlights({ last: null, hint: null });
   board.render(S.game);
@@ -206,7 +213,102 @@ function updateHead() {
   const total = line().moves.length;
   $("trProgress").style.width = total ? `${Math.min(100, (ply() / total) * 100)}%` : "100%";
   $("trScore").textContent = `Zug ${Math.floor(ply() / 2) + 1} · Fehler: ${S.mistakes}`;
+  renderMoves();
 }
+
+// ---------------------------------------------------------------------------
+// Zugliste, Erklärungen und Durchblättern
+// ---------------------------------------------------------------------------
+/** Alle Züge, die in der Liste stehen: gespielte + (im Lernmodus) die restliche Variante. */
+function listMoves() {
+  const hist = S.game.history();
+  const out = hist.map((san, i) => ({ san, played: true, note: noteFor(hist, i) }));
+  if (!S.outOfBook && S.mode === "learn" && settings.showFuture) {
+    for (let i = hist.length; i < line().moves.length; i++) out.push({ san: line().moves[i].san, played: false, note: line().moves[i].note });
+  }
+  return out;
+}
+
+function noteFor(hist, i) {
+  const ln = S.opening.lines.find((l) => hist.slice(0, i + 1).every((h, k) => l.moves[k]?.san === h));
+  if (ln) return ln.moves[i].note;
+  return S.freeNotes[i] || "";
+}
+
+function renderMoves() {
+  const list = $("moveList");
+  if (!list || !S.opening) return;
+  const moves = listMoves();
+  const cur = S.game.history().length;
+  let html = "";
+  for (let i = 0; i < moves.length; i += 2) {
+    html += `<span class="no">${i / 2 + 1}.</span>`;
+    for (const k of [i, i + 1]) {
+      const m = moves[k];
+      if (!m) { html += "<span></span>"; continue; }
+      const cls = [m.played ? "" : "future", S.view === k + 1 ? "view" : "", S.view === null && k === cur - 1 ? "cur" : ""].join(" ");
+      html += `<button type="button" class="${cls}" data-ply="${k + 1}">${sanToGerman(m.san)}</button>`;
+    }
+  }
+  if (!moves.length) html = `<span></span><span class="muted" style="grid-column: span 2">Noch keine Züge.</span>`;
+  list.innerHTML = html;
+  const active = list.querySelector(".view, .cur");
+  active?.scrollIntoView({ block: "nearest" });
+  // Erklärung zum angezeigten bzw. letzten Zug
+  const show = S.view ?? cur;
+  const m = moves[show - 1];
+  $("moveNote").innerHTML = m
+    ? `<b>${Math.ceil(show / 2)}.${show % 2 === 0 ? ".." : ""} ${sanToGerman(m.san)}</b> – ${escapeHtml(m.note || "Keine Erklärung hinterlegt. Frag Claude mit „🧠 Warum?“.")}`
+    : `<span class="muted">${escapeHtml(S.opening.summary || "")}</span>`;
+  $("btnPrev").disabled = show <= 0;
+  $("btnFirst").disabled = show <= 0;
+  $("btnNext").disabled = show >= moves.length;
+  $("btnLast").disabled = S.view === null;
+}
+
+function escapeHtml(t) {
+  return String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+}
+
+/** Eine Stellung aus der Liste ansehen (nur Anzeige, die Partie läuft weiter). */
+function viewPly(n) {
+  const moves = listMoves();
+  n = Math.max(0, Math.min(n, moves.length));
+  if (n === S.game.history().length && moves.slice(0, n).every((m) => m.played)) return goLive();
+  S.view = n;
+  const g = new Chess();
+  let last = null;
+  for (const m of moves.slice(0, n)) last = g.move(m.san);
+  board.interactive = false;
+  board.setArrows(last ? [{ from: last.from, to: last.to, kind: last.color === userSide() ? "you" : "opp" }] : []);
+  board.highlights = { last: last ? { from: last.from, to: last.to } : null, hint: null };
+  board.render(g);
+  $("reviewBanner").hidden = false;
+  $("reviewText").textContent = n ? `Ansicht nach ${Math.ceil(n / 2)}.${n % 2 === 0 ? ".." : ""} ${sanToGerman(last.san)}` : "Ansicht: Ausgangsstellung";
+  renderMoves();
+}
+
+function goLive() {
+  if (S.view === null) return;
+  S.view = null;
+  board.interactive = true;
+  board.setArrows([]);
+  $("reviewBanner").hidden = true;
+  const last = S.game.history({ verbose: true }).slice(-1)[0];
+  board.highlights = { last: last ? { from: last.from, to: last.to } : null, hint: S.liveHint || null };
+  board.render(S.game);
+  renderMoves();
+}
+
+$("moveList").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-ply]");
+  if (b) viewPly(Number(b.dataset.ply));
+});
+$("btnPrev").addEventListener("click", () => viewPly((S.view ?? S.game.history().length) - 1));
+$("btnNext").addEventListener("click", () => viewPly((S.view ?? S.game.history().length) + 1));
+$("btnFirst").addEventListener("click", () => viewPly(0));
+$("btnLast").addEventListener("click", goLive);
+$("btnLive").addEventListener("click", goLive);
 
 $("btnBack").addEventListener("click", () => {
   speaker.stop();
@@ -226,6 +328,7 @@ function mvHtml(san) {
 
 /** Nächsten Schritt ansagen. `prefix` wird vor der Ansage vorgelesen. */
 async function step(prefix = "") {
+  if (S.view !== null) goLive();
   updateHead();
   board.render(S.game);
   S.hintShown = false;
@@ -249,14 +352,14 @@ async function step(prefix = "") {
 
   if (isUserTurn()) {
     if (S.mode === "learn") {
-      board.setHighlights({ hint: moveSquares(exp.san) });
+      board.setHighlights({ hint: { ...moveSquares(exp.san), kind: "you" } });
       say(`Dein Zug: ${mvHtml(exp.san)}`, exp.note, { extraSpeech: prefix });
     } else {
       board.setHighlights({ hint: null });
       say("Du bist dran – welcher Zug?", "Tipp: Sag „Tipp“, wenn du nicht weiterweißt.", { speakNote: false, extraSpeech: prefix });
     }
   } else if (S.opp === "app") {
-    board.setHighlights({ hint: moveSquares(exp.san) });
+    board.setHighlights({ hint: { ...moveSquares(exp.san), kind: "opp" } });
     say(
       `Gegner (${colorName(color)}): ${mvHtml(exp.san)}`,
       exp.note,
@@ -324,7 +427,8 @@ async function stepFree(prefix) {
       if (S.game.fen() !== fenAtAsk) return;
       if (!r.move) throw new Error("Claude hat keinen gültigen Zug geliefert – bitte „Nochmal“ antippen.");
       S.claudeMove = r.move;
-      board.setHighlights({ hint: { from: r.move.from, to: r.move.to } });
+      board.setHighlights({ hint: { from: r.move.from, to: r.move.to, kind: "opp" } });
+      if (r.comment) S.freeNotes[ply()] = r.comment;
       if (r.comment) coachMsg(r.comment);
       coachMsg(`➜ Ich spiele ${sanToGerman(r.move.san)}`);
       say(`Ich spiele ${mvHtml(r.move.san)}`, r.comment, {
@@ -350,7 +454,7 @@ async function stepFree(prefix) {
       const adv = await coach.playOrAdvise({ game: S.game, ctx: contextText(), userSide: userSide(), role: "advice" });
       if (S.game.fen() !== fenAtAsk) return; // inzwischen weitergespielt
       S.advice = adv.move;
-      if (adv.move) board.setHighlights({ hint: { from: adv.move.from, to: adv.move.to } });
+      if (adv.move) board.setHighlights({ hint: { from: adv.move.from, to: adv.move.to, kind: "claude" } });
       say(adv.move ? `Vorschlag: ${mvHtml(adv.move.san)}` : "Du bist dran", adv.comment);
       coachMsg(adv.comment + (adv.move ? `\n➜ Vorschlag: ${sanToGerman(adv.move.san)}` : ""));
     } catch (e) {
@@ -397,6 +501,7 @@ function finish(prefix) {
  * @param source "board" | "voice" | "camera" | "button" | "text"
  */
 function handleMove(move, source) {
+  if (S.view !== null) goLive();
   if (!S.awaiting || S.finished) {
     if (source !== "camera") toast("Gerade wird kein Zug erwartet.");
     return;
@@ -455,7 +560,7 @@ function handleMove(move, source) {
     S.mistakes++;
     updateHead();
     S.hintShown = true;
-    board.setHighlights({ hint: moveSquares(exp.san) });
+    board.setHighlights({ hint: { ...moveSquares(exp.san), kind: "you" } });
     const takeBack = source === "board" || source === "text" ? "" : " Bitte nimm den Zug auf dem Brett zurück.";
     say(
       `Nicht ganz: ${mvHtml(san)} ✗ – richtig ist ${mvHtml(exp.san)}`,
@@ -465,6 +570,7 @@ function handleMove(move, source) {
     if (takeBack) setTimeout(() => toast("Zug auf dem Brett zurücknehmen und dann richtig ziehen."), 200);
     sys(`Falsch: ${sanToGerman(san)} (erwartet ${sanToGerman(exp.san)})`);
     camera.resetBaseline();
+    explainMistake(san, exp);
     return;
   }
 
@@ -480,6 +586,32 @@ function handleMove(move, source) {
       { bad: true },
     );
     addConfirmButton(move);
+  }
+}
+
+/** Claude erklärt kurz, warum der gespielte Zug schlechter ist als der Buchzug. */
+async function explainMistake(wrongSan, exp) {
+  if (!settings.explainMistakes || !coach.ready) return;
+  const fen = S.game.fen();
+  const typing = document.createElement("div");
+  typing.className = "msg coach typing";
+  typing.textContent = "Claude erklärt den Fehler …";
+  $("chatLog").appendChild(typing);
+  $("chatLog").scrollTop = 1e9;
+  try {
+    const text = await coach.explainMistake({ game: S.game, wrong: wrongSan, right: exp.san, note: exp.note, ctx: contextText() });
+    typing.remove();
+    if (!text) return;
+    coachMsg("💡 " + text);
+    // Nur vorlesen, wenn noch dieselbe Stellung auf dem Brett ist
+    if (S.game.fen() === fen) {
+      $("coachNote").textContent = text;
+      await speaker.whenIdle?.();
+      if (S.game.fen() === fen) speaker.speak(text);
+    }
+  } catch (e) {
+    typing.remove();
+    if (e?.code !== "cancelled") sys("⚠️ " + (e.message || e));
   }
 }
 
@@ -559,7 +691,7 @@ function giveHint() {
     return;
   }
   S.hintShown = true;
-  board.setHighlights({ hint: moveSquares(exp.san) });
+  board.setHighlights({ hint: { ...moveSquares(exp.san), kind: isUserTurn() ? "you" : "opp" } });
   say(`Lösung: ${mvHtml(exp.san)}`, exp.note);
 }
 
@@ -571,7 +703,7 @@ async function askHintVsClaude() {
     const adv = await coach.playOrAdvise({ game: S.game, ctx: contextText(), userSide: userSide(), role: "advice" });
     if (S.game.fen() !== fen) return;
     S.advice = adv.move;
-    if (adv.move) board.setHighlights({ hint: { from: adv.move.from, to: adv.move.to } });
+    if (adv.move) board.setHighlights({ hint: { from: adv.move.from, to: adv.move.to, kind: "claude" } });
     coachMsg(adv.comment + (adv.move ? `\n➜ Vorschlag: ${sanToGerman(adv.move.san)}` : ""));
     say(adv.move ? `Mein Tipp: ${mvHtml(adv.move.san)}` : "Du bist dran", adv.comment);
   } catch (e) {
@@ -597,11 +729,20 @@ function undo() {
   step("Zurückgenommen.");
 }
 
-board.onMove = ({ from, to }) => {
+const _setHL = board.setHighlights.bind(board);
+board.setHighlights = (h) => {
+  if ("hint" in h) S.liveHint = h.hint;
+  if (S.view !== null) return; // während des Durchblätterns nicht überschreiben
+  _setHL(h);
+};
+
+board.onMove = ({ from, to, promotion }) => {
+  if (S.view !== null) goLive();
   const legal = S.game.moves({ verbose: true }).filter((m) => m.from === from && m.to === to);
-  if (!legal.length) return;
-  const m = legal.find((x) => !x.promotion || x.promotion === "q") || legal[0];
+  if (!legal.length) return board.render(S.game);
+  const m = legal.find((x) => (promotion ? x.promotion === promotion : !x.promotion || x.promotion === "q")) || legal[0];
   handleMove(m, "board");
+  board.render(S.game);
 };
 
 // ---------------------------------------------------------------------------
@@ -987,6 +1128,52 @@ $("btnSummary").addEventListener("click", () =>
 );
 
 // ---------------------------------------------------------------------------
+// Tastatur (PC) und Foto per Drag & Drop
+// ---------------------------------------------------------------------------
+document.addEventListener("keydown", (e) => {
+  if ($("screenTrain").hidden || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (e.target.closest("input, textarea, select, dialog[open]")) return;
+  const k = e.key.toLowerCase();
+  const act = {
+    " ": confirmDone,
+    enter: confirmDone,
+    t: giveHint,
+    w: () => $("btnWhy").click(),
+    n: () => $("btnRepeat").click(),
+    z: undo,
+    backspace: undo,
+    arrowleft: () => $("btnPrev").click(),
+    arrowright: () => $("btnNext").click(),
+    home: () => viewPly(0),
+    end: goLive,
+    escape: goLive,
+    m: () => $("btnMic").click(),
+  }[k];
+  if (act) {
+    e.preventDefault();
+    act();
+  }
+});
+
+const camView = $("camView");
+camView.addEventListener("dragover", (e) => {
+  if (![...(e.dataTransfer?.items || [])].some((i) => i.type.startsWith("image/"))) return;
+  e.preventDefault();
+  camView.classList.add("drop");
+});
+camView.addEventListener("dragleave", () => camView.classList.remove("drop"));
+camView.addEventListener("drop", async (e) => {
+  e.preventDefault();
+  camView.classList.remove("drop");
+  const file = [...(e.dataTransfer?.files || [])].find((f) => f.type.startsWith("image/"));
+  if (!file) return;
+  if (!S.awaiting) return toast("Gerade wird kein Zug erwartet.");
+  const img = await toJpeg(file);
+  showPhoto(img);
+  runDetection(null, img, true);
+});
+
+// ---------------------------------------------------------------------------
 // Einstellungen
 // ---------------------------------------------------------------------------
 for (const m of MODELS) {
@@ -1004,6 +1191,8 @@ function openSettings() {
   $("setVoice").checked = settings.voice;
   $("setRate").value = settings.rate;
   $("setNotes").checked = settings.notes;
+  $("setExplainMistakes").checked = settings.explainMistakes;
+  $("setShowFuture").checked = settings.showFuture;
   $("testResult").textContent = "";
   $("accountInfo").hidden = !coach.viaAccount;
   $("keySection").hidden = coach.viaAccount;
@@ -1018,6 +1207,9 @@ function readSettingsForm() {
   settings.voice = $("setVoice").checked;
   settings.rate = Number($("setRate").value);
   settings.notes = $("setNotes").checked;
+  settings.explainMistakes = $("setExplainMistakes").checked;
+  settings.showFuture = $("setShowFuture").checked;
+  if (S.opening) renderMoves();
   coach.configure({ apiKey: settings.apiKey, model: settings.model });
   speaker.enabled = settings.voice;
   speaker.rate = settings.rate;
