@@ -2,7 +2,7 @@ import { Chess } from "../vendor/chess.js";
 import { OPENINGS, normalizeOpening } from "./openings.js";
 import { BoardView } from "./board.js";
 import { BoardCamera } from "./camera.js";
-import { Speaker, Listener, parseCommand, parseSpokenMove, sanToSpeech, sanToGerman } from "./speech.js";
+import { Speaker, Listener, CLAUDE_VOICES, parseCommand, parseSpokenMove, sanToSpeech, sanToGerman } from "./speech.js";
 import { Coach, MODELS } from "./ai.js";
 
 const $ = (id) => document.getElementById(id);
@@ -15,7 +15,7 @@ const store = {
 // Zustand
 // ---------------------------------------------------------------------------
 const settings = Object.assign(
-  { apiKey: "", model: MODELS[0].id, voice: true, rate: 1.05, perspective: "von der Seite von Weiß (Weiß unten im Bild)", autoDetect: true, notes: true, explainMistakes: true, showFuture: true },
+  { apiKey: "", model: MODELS[0].id, voice: true, rate: 1.05, perspective: "von der Seite von Weiß (Weiß unten im Bild)", autoDetect: true, notes: true, explainMistakes: true, showFuture: true, browserVoice: "", claudeVoice: "buttery" },
   store.get("schach.settings", {}),
 );
 const progress = store.get("schach.progress", {}); // {openingId: {lineIdx: {runs, perfect}}}
@@ -25,6 +25,9 @@ coach.configure({ apiKey: settings.apiKey, model: settings.model });
 const speaker = new Speaker();
 speaker.enabled = settings.voice;
 speaker.rate = settings.rate;
+speaker.setBrowserVoice(settings.browserVoice);
+speaker.claudeVoice = settings.claudeVoice;
+speaker.onVoicesChanged = () => { if ($("dlgSettings").open) fillVoiceSelect(); };
 const listener = new Listener();
 const board = new BoardView($("board"));
 const camera = new BoardCamera($("video"));
@@ -1190,6 +1193,7 @@ function openSettings() {
   $("setAutoDetect").checked = settings.autoDetect;
   $("setVoice").checked = settings.voice;
   $("setRate").value = settings.rate;
+  fillVoiceSelect();
   $("setNotes").checked = settings.notes;
   $("setExplainMistakes").checked = settings.explainMistakes;
   $("setShowFuture").checked = settings.showFuture;
@@ -1206,6 +1210,10 @@ function readSettingsForm() {
   settings.autoDetect = $("setAutoDetect").checked;
   settings.voice = $("setVoice").checked;
   settings.rate = Number($("setRate").value);
+  if (speaker.usesClaudeVoice) settings.claudeVoice = $("setVoiceName").value || "buttery";
+  else settings.browserVoice = $("setVoiceName").value;
+  speaker.claudeVoice = settings.claudeVoice;
+  speaker.setBrowserVoice(settings.browserVoice);
   settings.notes = $("setNotes").checked;
   settings.explainMistakes = $("setExplainMistakes").checked;
   settings.showFuture = $("setShowFuture").checked;
@@ -1216,6 +1224,49 @@ function readSettingsForm() {
   $("btnVoice").textContent = settings.voice ? "🔊" : "🔇";
   camera.armed = settings.autoDetect && S.awaiting && camera.running;
 }
+
+/** Stimmenauswahl: Claudes Stimmen (claude.ai) oder die deutschen Stimmen des Geräts. */
+function fillVoiceSelect() {
+  const sel = $("setVoiceName");
+  sel.innerHTML = "";
+  const add = (value, label) => {
+    const o = document.createElement("option");
+    o.value = value;
+    o.textContent = label;
+    sel.appendChild(o);
+  };
+  const ua = navigator.userAgent;
+  const apple = /iPhone|iPad|Macintosh/.test(ua);
+  if (speaker.usesClaudeVoice) {
+    for (const v of CLAUDE_VOICES) add(v.id, v.label);
+    sel.value = settings.claudeVoice;
+    $("voiceHint").textContent = "Das ist Claudes eigene Stimme – sie klingt am natürlichsten.";
+    return;
+  }
+  const voices = speaker.browserVoices();
+  add("", voices.length ? `Automatisch – beste Stimme (${voices[0].name})` : "Standardstimme des Geräts");
+  voices.forEach((v, i) => add(v.name, `${i === 0 ? "★ " : ""}${v.name}`));
+  sel.value = voices.some((v) => v.name === settings.browserVoice) ? settings.browserVoice : "";
+  $("voiceHint").textContent =
+    (window.claude?.use
+      ? "Claudes eigene Stimme gibt es nur, wenn du diese Seite in Chrome oder der Claude-Desktop-App öffnest. Bis dahin wird eine Gerätestimme genutzt. "
+      : "Hier wird eine Stimme deines Geräts genutzt. ") +
+    (apple
+      ? "Tipp für iPhone/iPad/Mac: Unter Einstellungen → Bedienungshilfen → Gesprochene Inhalte → Stimmen → Deutsch die Stimme „Anna“ oder „Helena“ in der Premium- bzw. erweiterten Version laden – die klingt viel natürlicher. Danach die Seite neu laden."
+      : /Edg\//.test(ua)
+        ? "Tipp: Im Edge-Browser klingen die „Online (Natural)“-Stimmen am besten."
+        : "Tipp: In Chrome klingt „Google Deutsch“ meist am besten; in Microsoft Edge die „Online (Natural)“-Stimmen.");
+}
+
+$("btnVoiceTest").addEventListener("click", () => {
+  const prevEnabled = speaker.enabled;
+  speaker.enabled = true;
+  speaker.rate = Number($("setRate").value);
+  if (speaker.usesClaudeVoice) speaker.claudeVoice = $("setVoiceName").value || "buttery";
+  else speaker.setBrowserVoice($("setVoiceName").value);
+  speaker.speak("Hallo! Ich bin dein Schachtrainer. Spiel den Springer nach f3 – er greift den Bauern e5 an und bereitet die Rochade vor. Bereit?");
+  speaker.enabled = prevEnabled;
+});
 
 $("btnSettings").addEventListener("click", openSettings);
 $("btnSetupOpen").addEventListener("click", openSettings);

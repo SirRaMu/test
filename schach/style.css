@@ -126,7 +126,7 @@ dialog.sheet::backdrop { background: rgba(0, 0, 0, .6); }
   display: block; width: 100%; margin-top: 6px; padding: 10px; border-radius: 10px; border: 1px solid var(--line);
   background: var(--bg); color: var(--text); font: inherit; font-weight: 400;
 }
-.field .row input { margin-top: 0; }
+.field .row input, .field .row select { margin-top: 0; flex: 1; min-width: 0; }
 .field .row { margin-top: 6px; }
 .field input[type=range] { display: block; width: 100%; margin-top: 8px; accent-color: var(--accent); }
 .check { display: flex; gap: 8px; align-items: center; margin: 8px 0; font-size: .95rem; }

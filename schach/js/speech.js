@@ -30,24 +30,91 @@ export function sanToSpeech(san, color) {
 // ---------------------------------------------------------------------------
 // Sprachausgabe
 // ---------------------------------------------------------------------------
+/** Claudes Stimmen (nur auf claude.ai im Chrome-Browser / in der Desktop-App). */
+export const CLAUDE_VOICES = [
+  { id: "buttery", label: "Claude – warm (Standard)" },
+  { id: "airy", label: "Claude – hell und leicht" },
+  { id: "rounded", label: "Claude – rund und ruhig" },
+  { id: "glassy", label: "Claude – klar und präzise" },
+];
+
+/** Bewertet, wie natürlich eine Browser-Stimme vermutlich klingt (höher = besser). */
+function voiceScore(v) {
+  const n = v.name.toLowerCase();
+  let s = 0;
+  if (/natural|neural|online/.test(n)) s += 60; // Edge/Windows: "Katja Online (Natural)"
+  if (/premium/.test(n)) s += 55; // Apple Premium-Stimmen
+  if (/enhanced|erweitert|verbessert/.test(n)) s += 45; // Apple erweiterte Stimmen
+  if (/google/.test(n)) s += 35; // Chrome / Android
+  if (/siri/.test(n)) s += 40;
+  if (/anna|helena|petra|markus|yannick|katja|conrad|amala|florian|seraphina/.test(n)) s += 8;
+  if (/compact|espeak|e-speak|grandma|grandpa|eddy|flo|reed|rocko|sandy|shelley|albert|bad news|bahh|bells|boing|bubbles|cellos|jester|organ|superstar|trinoids|whisper|wobble|zarvox/.test(n)) s -= 80;
+  if (v.lang?.toLowerCase() === "de-de") s += 5;
+  if (v.localService === false) s += 3;
+  return s;
+}
+
+/** Text für die Sprachausgabe vorbereiten: Notation ausschreiben, natürliche Pausen. */
+function prepareSpeech(text) {
+  return text
+    .replace(/[*_#`>]/g, "")
+    .replace(/…/g, "")
+    .replace(/\b\d+\.(\.\.)?\s?(?=[a-hKQRBNSLTDO])/g, "") // Zugnummern wie "3." nicht vorlesen
+    .replace(/\bO-O-O\b/g, "lange Rochade")
+    .replace(/\bO-O\b/g, "kurze Rochade")
+    .replace(/\s+[–—]\s+/g, ", ")
+    .replace(/✗|✓|➜|💡|🎉/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
 export class Speaker {
   constructor() {
     this.enabled = true;
-    this.rate = 1.05;
-    this.voice = null;
+    this.rate = 1.0;
+    this.voice = null; // Browser-Stimme
+    this.voiceName = ""; // gewünschte Browser-Stimme ("" = automatisch beste)
+    this.claudeVoice = "buttery";
     this.onStart = () => {};
     this.onEnd = () => {};
+    this.onVoicesChanged = () => {};
     this.supported = "speechSynthesis" in window;
+    this._token = 0;
     if (this.supported) {
-      const pick = () => {
-        const voices = speechSynthesis.getVoices().filter((v) => v.lang && v.lang.toLowerCase().startsWith("de"));
-        // Bevorzugt natürlich klingende Stimmen
-        this.voice =
-          voices.find((v) => /natural|neural|premium|enhanced|google/i.test(v.name)) || voices[0] || null;
-      };
-      pick();
-      speechSynthesis.addEventListener?.("voiceschanged", pick);
+      this._pick();
+      speechSynthesis.addEventListener?.("voiceschanged", () => {
+        this._pick();
+        this.onVoicesChanged();
+      });
     }
+  }
+
+  /** Deutsche Browser-Stimmen, beste zuerst. */
+  browserVoices() {
+    if (!("speechSynthesis" in window)) return [];
+    return speechSynthesis
+      .getVoices()
+      .filter((v) => v.lang && v.lang.toLowerCase().startsWith("de"))
+      .sort((a, b) => voiceScore(b) - voiceScore(a));
+  }
+
+  _pick() {
+    const voices = this.browserVoices();
+    this.voice = voices.find((v) => v.name === this.voiceName) || voices[0] || null;
+  }
+
+  setBrowserVoice(name) {
+    this.voiceName = name || "";
+    this._pick();
+  }
+
+  get usesClaudeVoice() {
+    return !!this.ctts;
+  }
+
+  get currentVoiceLabel() {
+    if (this.ctts) return (CLAUDE_VOICES.find((v) => v.id === this.claudeVoice) || CLAUDE_VOICES[0]).label;
+    return this.voice ? this.voice.name : "Standardstimme";
   }
 
   /** Claudes eigene Stimme verwenden (nur auf claude.ai verfügbar). */
@@ -62,38 +129,57 @@ export class Speaker {
 
   speak(text) {
     if (!this.supported || !this.enabled || !text) return Promise.resolve();
+    const clean = prepareSpeech(text);
+    if (!clean) return Promise.resolve();
+
     if (this.ctts) {
-      const clean = text.replace(/[*_#`>…]/g, "").replace(/\bO-O-O\b/g, "lange Rochade").replace(/\bO-O\b/g, "kurze Rochade").slice(0, 1900);
-      const opts = { language: "de", rate: Math.min(1.5, Math.max(0.7, this.rate)) };
+      const opts = { language: "de", voice: this.claudeVoice, rate: Math.min(1.5, Math.max(0.7, this.rate)) };
+      const t = clean.slice(0, 1990);
       // "busy": das Diktat beendet sich gerade noch – kurz warten und nochmal
-      return this.ctts.speak(clean, opts).catch((e) =>
-        e?.code === "busy" ? new Promise((r) => setTimeout(r, 700)).then(() => this.ctts.speak(clean, opts)).catch(() => {}) : undefined,
+      return this.ctts.speak(t, opts).catch((e) =>
+        e?.code === "busy" ? new Promise((r) => setTimeout(r, 700)).then(() => this.ctts.speak(t, opts)).catch(() => {}) : undefined,
       );
     }
-    // Markdown und Sonderzeichen entfernen, Notation vorlesbar machen
-    const clean = text
-      .replace(/[*_#`>]/g, "")
-      .replace(/…/g, "")
-      .replace(/\b(\d+)\.\s?/g, "")
-      .replace(/\bO-O-O\b/g, "lange Rochade")
-      .replace(/\bO-O\b/g, "kurze Rochade");
+
+    // Browser-Stimme: Satz für Satz sprechen. Das klingt natürlicher (echte Pausen,
+    // neue Satzmelodie) und umgeht Abbrüche langer Texte in Chrome.
     speechSynthesis.cancel();
+    const token = ++this._token;
+    const sentences = clean.match(/[^.!?]+[.!?]*\s*/g)?.map((x) => x.trim()).filter(Boolean) || [clean];
     return new Promise((resolve) => {
-      const u = new SpeechSynthesisUtterance(clean);
-      u.lang = "de-DE";
-      if (this.voice) u.voice = this.voice;
-      u.rate = this.rate;
-      u.onstart = () => this.onStart();
-      const done = () => { this.onEnd(); resolve(); };
-      u.onend = done;
-      u.onerror = done;
-      speechSynthesis.speak(u);
+      let i = 0;
+      let started = false;
+      const next = () => {
+        if (token !== this._token) return resolve();
+        if (i >= sentences.length) {
+          this.onEnd();
+          return resolve();
+        }
+        const sentence = sentences[i++];
+        const u = new SpeechSynthesisUtterance(sentence);
+        u.lang = this.voice?.lang || "de-DE";
+        if (this.voice) u.voice = this.voice;
+        u.rate = this.rate;
+        // Fragen leicht anheben, sonst minimal variieren – wirkt weniger monoton
+        u.pitch = /\?$/.test(sentence) ? 1.12 : 1 + ((i % 3) - 1) * 0.03;
+        u.onstart = () => {
+          if (!started) {
+            started = true;
+            this.onStart();
+          }
+        };
+        u.onend = next;
+        u.onerror = next;
+        speechSynthesis.speak(u);
+      };
+      next();
     });
   }
 
   stop() {
+    this._token++;
     if (this.ctts) this.ctts.stop().catch(() => {});
-    else if (this.supported) speechSynthesis.cancel();
+    else if ("speechSynthesis" in window) speechSynthesis.cancel();
     this.onEnd();
   }
 
@@ -108,7 +194,7 @@ export class Speaker {
 
   get speaking() {
     if (this.ctts) return this.ctts.active();
-    return this.supported && speechSynthesis.speaking;
+    return "speechSynthesis" in window && speechSynthesis.speaking;
   }
 }
 
